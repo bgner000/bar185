@@ -273,45 +273,18 @@ COMMIT;
 -- =========================================================
 -- 7. ROLLING DEMO BOOKING SLOTS
 -- =========================================================
--- The dated slots in section 3 become stale once their date passes.
--- This generates two open slots per day (6-8pm, 8-10pm Sydney time) for
--- the next 14 days, so there is always bookable availability for local
--- development, testing and demos. Safe to re-run.
+-- The dated slots in section 3 become stale once their date passes, and a
+-- real Bar 185 booking day needs a full 15-minute start-time sequence
+-- (5:00pm-9:00pm), not just one or two fixed blocks.
 --
--- Times are anchored to Australia/Sydney wall-clock time (converting via
--- "AT TIME ZONE" twice) rather than NOW() directly, because the database
--- session's own timezone is UTC — using NOW() directly would store slots
--- offset by several hours from the intended 6pm/8pm local times.
-
-BEGIN;
-
-INSERT INTO booking_slots (
-  venue_id,
-  starts_at,
-  ends_at,
-  total_capacity,
-  reserved_capacity,
-  version_number,
-  is_open
-)
-SELECT
-  v.id,
-  (local_slot AT TIME ZONE 'Australia/Sydney'),
-  (local_slot AT TIME ZONE 'Australia/Sydney') + INTERVAL '2 hours',
-  40,
-  0,
-  1,
-  TRUE
-FROM venues v
-CROSS JOIN LATERAL (
-  SELECT generate_series(
-    date_trunc('day', NOW() AT TIME ZONE 'Australia/Sydney') + INTERVAL '1 day' + INTERVAL '18 hours',
-    date_trunc('day', NOW() AT TIME ZONE 'Australia/Sydney') + INTERVAL '14 days' + INTERVAL '20 hours',
-    INTERVAL '2 hours'
-  ) AS local_slot
-) s
-WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
-  AND EXTRACT(HOUR FROM local_slot) IN (18, 20)
-ON CONFLICT (venue_id, starts_at, ends_at) DO NOTHING;
-
-COMMIT;
+-- That generator now lives in backend/scripts/generate-booking-slots.js
+-- instead of here, because it needs to stay in sync with two values that
+-- already exist in booking_rules (standard_booking_duration_minutes and
+-- booking_window_days) rather than hardcoding a duration or window that
+-- could silently drift from the real rules. Keeping one canonical copy of
+-- that query avoids this file and the script quietly diverging over time.
+--
+-- Run it with:  npm run generate:slots   (from backend/)
+-- It is idempotent (ON CONFLICT DO NOTHING on booking_slots' existing
+-- UNIQUE (venue_id, starts_at, ends_at) constraint), so re-running it is
+-- always safe and only ever adds slots that don't already exist.
