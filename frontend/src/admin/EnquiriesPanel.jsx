@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import StatusBadge from '../components/StatusBadge'
 import { EmptyState } from '../components/Feedback'
 import { formatDateTime } from '../lib/format'
@@ -11,14 +12,100 @@ const STATUS_OPTIONS = [
   { value: 'declined', label: 'Declined' },
 ]
 
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'event-date', label: 'Preferred event date' },
+  { value: 'guests-desc', label: 'Guest count (largest first)' },
+]
+
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'new', label: 'New' },
+  ...STATUS_OPTIONS,
+]
+
+function sortEnquiries(enquiries, sortBy) {
+  const sorted = [...enquiries]
+
+  switch (sortBy) {
+    case 'oldest':
+      return sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    case 'event-date':
+      return sorted.sort((a, b) => {
+        if (!a.preferred_start_at) return 1
+        if (!b.preferred_start_at) return -1
+        return new Date(a.preferred_start_at) - new Date(b.preferred_start_at)
+      })
+    case 'guests-desc':
+      return sorted.sort((a, b) => (b.expected_guest_count || 0) - (a.expected_guest_count || 0))
+    case 'newest':
+    default:
+      return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  }
+}
+
+function matchesSearch(enquiry, term) {
+  if (!term) return true
+  const haystack = `${enquiry.customer_name} ${enquiry.enquiry_reference}`.toLowerCase()
+  return haystack.includes(term.toLowerCase())
+}
+
 function EnquiriesPanel({ enquiries, updatingReference, onStatusChange }) {
+  const [sortBy, setSortBy] = useState('newest')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch] = useState('')
+
+  const visible = useMemo(() => {
+    let list = enquiries
+
+    if (statusFilter !== 'all') {
+      list = list.filter((e) => e.status === statusFilter)
+    }
+
+    list = list.filter((e) => matchesSearch(e, search))
+
+    return sortEnquiries(list, sortBy)
+  }, [enquiries, statusFilter, search, sortBy])
+
   if (enquiries.length === 0) {
     return <EmptyState label="No event enquiries yet." />
   }
 
   return (
-    <div className="admin-card-list">
-      {enquiries.map((enquiry) => {
+    <div>
+      <div className="admin-toolbar">
+        <span className="admin-toolbar-label">Filter</span>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          {FILTER_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <span className="admin-toolbar-label">Sort</span>
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <input
+          type="search"
+          placeholder="Search customer or reference…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState label="No enquiries match." />
+      ) : (
+        <div className="admin-card-list">
+          {visible.map((enquiry) => {
         const isUpdating = updatingReference === enquiry.enquiry_reference
 
         return (
@@ -83,7 +170,9 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange }) {
             </div>
           </div>
         )
-      })}
+          })}
+        </div>
+      )}
     </div>
   )
 }

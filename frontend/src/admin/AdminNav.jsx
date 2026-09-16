@@ -3,6 +3,7 @@ const SECTIONS = [
   { id: 'bookings', label: 'Bookings' },
   { id: 'large-group', label: 'Large-Group Requests' },
   { id: 'enquiries', label: 'Event Enquiries' },
+  { id: 'menu', label: 'Menu' },
 ]
 
 function AdminNav({ active, onChange, counts }) {

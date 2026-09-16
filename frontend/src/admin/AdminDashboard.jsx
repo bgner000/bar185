@@ -6,6 +6,7 @@ import DashboardSummary from './DashboardSummary'
 import BookingsPanel from './BookingsPanel'
 import LargeGroupPanel from './LargeGroupPanel'
 import EnquiriesPanel from './EnquiriesPanel'
+import MenuPanel from './MenuPanel'
 import './admin.css'
 
 function AdminDashboard() {
@@ -29,23 +30,18 @@ function AdminDashboard() {
     loadDashboard().finally(() => setLoading(false))
   }, [])
 
-  const reviewLargeGroupRequest = async (requestReference, action) => {
-    setActionError('')
-    setUpdatingReference(requestReference)
+  // These are called from inside ConfirmDialog's onConfirm, which awaits them
+  // and shows its own inline error if they throw — so they intentionally do
+  // NOT catch errors themselves; catching here would make a failed action
+  // look like it succeeded and close the dialog anyway.
+  const approveLargeGroupRequest = async (requestReference) => {
+    await api.approveLargeGroupRequest(requestReference)
+    await loadDashboard()
+  }
 
-    try {
-      if (action === 'approve') {
-        await api.approveLargeGroupRequest(requestReference)
-      } else {
-        await api.declineLargeGroupRequest(requestReference)
-      }
-
-      await loadDashboard()
-    } catch (error) {
-      setActionError(error.message)
-    } finally {
-      setUpdatingReference('')
-    }
+  const declineLargeGroupRequest = async (requestReference, reason) => {
+    await api.declineLargeGroupRequest(requestReference, reason)
+    await loadDashboard()
   }
 
   const updateEventEnquiryStatus = async (enquiryReference, newStatus) => {
@@ -99,9 +95,10 @@ function AdminDashboard() {
 
   const counts = {
     overview: 0,
-    bookings: bookings.length,
+    bookings: 0,
     'large-group': largeGroupRequests.filter((r) => r.status === 'pending').length,
     enquiries: eventEnquiries.filter((e) => !['closed', 'declined'].includes(e.status)).length,
+    menu: 0,
   }
 
   return (
@@ -140,21 +137,15 @@ function AdminDashboard() {
             </>
           )}
 
-          {activeSection === 'bookings' && (
-            <>
-              <h2 className="admin-section-title">Bookings</h2>
-              <BookingsPanel bookings={bookings} />
-            </>
-          )}
+          {activeSection === 'bookings' && <BookingsPanel />}
 
           {activeSection === 'large-group' && (
             <>
               <h2 className="admin-section-title">Large-Group Requests</h2>
               <LargeGroupPanel
                 requests={largeGroupRequests}
-                updatingReference={updatingReference}
-                onApprove={(ref) => reviewLargeGroupRequest(ref, 'approve')}
-                onDecline={(ref) => reviewLargeGroupRequest(ref, 'decline')}
+                onApprove={approveLargeGroupRequest}
+                onDecline={declineLargeGroupRequest}
               />
             </>
           )}
@@ -169,6 +160,8 @@ function AdminDashboard() {
               />
             </>
           )}
+
+          {activeSection === 'menu' && <MenuPanel />}
         </div>
       </div>
     </div>

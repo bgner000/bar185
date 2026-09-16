@@ -1,14 +1,31 @@
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
+const multer = require('multer');
 const pool = require('./db');
 const notifications = require('./notifications');
+const { saveMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
 
 const app = express();
 const PORT = 3000;
 
+const menuUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
+
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF, JPG, or PNG files are allowed'));
+    }
+  }
+});
+
 app.use(express.json());
 app.use(cors());
+app.use(PUBLIC_PREFIX, express.static(STORAGE_DIR));
 const requireApprovedAdmin = async (req, res, next) => {
   const email = req.get('X-Demo-User-Email');
 
@@ -859,6 +876,8 @@ app.get(
             customer_email,
             customer_phone,
             status,
+            decline_reason,
+            reviewed_at,
             created_at
           FROM large_group_booking_requests
           ORDER BY created_at DESC
@@ -1309,6 +1328,14 @@ app.patch(
   requireApprovedAdmin,
   async (req, res) => {
     const { requestReference } = req.params;
+    const { reason } = req.body;
+
+    if (typeof reason !== 'string' || reason.trim() === '') {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A decline reason is required'
+      });
+    }
 
     let client;
 
@@ -1324,7 +1351,8 @@ app.patch(
           status,
           customer_name,
           customer_email,
-          customer_phone
+          customer_phone,
+          decline_reason
         FROM large_group_booking_requests
         WHERE request_reference = $1
         FOR UPDATE
@@ -1369,12 +1397,14 @@ app.patch(
           status = 'declined',
           reviewed_by_user_id = $1,
           reviewed_at = NOW(),
+          decline_reason = $3,
           updated_at = NOW()
         WHERE id = $2
         `,
         [
           req.adminUser.id,
-          request.id
+          request.id,
+          reason.trim()
         ]
       );
 
@@ -1498,6 +1528,426 @@ app.patch(
     }
   }
 );
+
+app.get(
+  '/api/v1/admin/bookings',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { date } = req.query;
+    const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : null;
+
+    if (!serviceDate) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A date query parameter (YYYY-MM-DD) is required'
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          b.id,
+          b.booking_reference,
+          b.booking_type,
+          b.status,
+          b.party_size,
+          b.customer_name,
+          b.customer_email,
+          b.customer_phone,
+          b.special_requests,
+          b.seated_at,
+          b.completed_at,
+          b.no_show_at,
+          b.cancelled_at,
+          b.cancel_reason,
+          bs.starts_at,
+          bs.ends_at
+        FROM bookings b
+        JOIN booking_slots bs
+          ON bs.id = b.booking_slot_id
+        WHERE bs.starts_at >= ($1::date)::timestamp AT TIME ZONE 'Australia/Sydney'
+          AND bs.starts_at < ($1::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Australia/Sydney'
+        ORDER BY bs.starts_at ASC
+        `,
+        [serviceDate]
+      );
+
+      return res.status(200).json({
+        status: 'ok',
+        serviceDate,
+        bookings: result.rows
+      });
+    } catch (error) {
+      console.error('Admin bookings-by-date error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not load bookings for that date'
+      });
+    }
+  }
+);
+
+// Booking operational status transitions staff may perform from the admin
+// dashboard. Anything not listed here (e.g. leaving 'cancelled' or
+// 'no_show') is a dead end -- enforced here, not just by hiding buttons in
+// the UI, since the frontend hiding a control is not a security boundary.
+const ADMIN_BOOKING_TRANSITIONS = {
+  confirmed: ['seated', 'no_show', 'cancelled'],
+  seated: ['completed']
+};
+
+app.patch(
+  '/api/v1/admin/bookings/:bookingReference/status',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { bookingReference } = req.params;
+    const { status: nextStatus, reason } = req.body;
+
+    const validTargets = ['seated', 'completed', 'no_show', 'cancelled'];
+
+    if (!validTargets.includes(nextStatus)) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'Invalid target status'
+      });
+    }
+
+    let client;
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const bookingResult = await client.query(
+        `
+        SELECT
+          b.id,
+          b.booking_reference,
+          b.booking_slot_id,
+          b.party_size,
+          b.status,
+          b.customer_name,
+          b.customer_email,
+          b.customer_phone
+        FROM bookings b
+        WHERE b.booking_reference = $1
+        FOR UPDATE OF b
+        `,
+        [bookingReference.trim()]
+      );
+
+      if (bookingResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Booking not found'
+        });
+      }
+
+      const booking = bookingResult.rows[0];
+      const allowedNext = ADMIN_BOOKING_TRANSITIONS[booking.status] || [];
+
+      if (!allowedNext.includes(nextStatus)) {
+        await client.query('ROLLBACK');
+
+        return res.status(409).json({
+          status: 'failed',
+          message: `Booking cannot move from ${booking.status} to ${nextStatus}`
+        });
+      }
+
+      if (nextStatus === 'no_show') {
+        const slotResult = await client.query(
+          `SELECT starts_at FROM booking_slots WHERE id = $1`,
+          [booking.booking_slot_id]
+        );
+
+        const eligibleAt = new Date(
+          new Date(slotResult.rows[0].starts_at).getTime() + 30 * 60 * 1000
+        );
+
+        if (new Date() < eligibleAt) {
+          await client.query('ROLLBACK');
+
+          return res.status(409).json({
+            status: 'failed',
+            message: `This booking can only be marked no-show from ${eligibleAt.toISOString()}`
+          });
+        }
+      }
+
+      if (nextStatus === 'cancelled' || nextStatus === 'no_show') {
+        await client.query(
+          `
+          UPDATE booking_slots
+          SET
+            reserved_capacity = GREATEST(reserved_capacity - $1, 0),
+            version_number = version_number + 1,
+            updated_at = NOW()
+          WHERE id = $2
+          `,
+          [booking.party_size, booking.booking_slot_id]
+        );
+
+        await client.query(
+          `DELETE FROM booking_table_allocations WHERE booking_id = $1`,
+          [booking.id]
+        );
+      }
+
+      if (nextStatus === 'seated') {
+        await client.query(
+          `UPDATE bookings SET status = 'seated', seated_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [booking.id]
+        );
+      } else if (nextStatus === 'completed') {
+        await client.query(
+          `UPDATE bookings SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [booking.id]
+        );
+      } else if (nextStatus === 'no_show') {
+        await client.query(
+          `UPDATE bookings SET status = 'no_show', no_show_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [booking.id]
+        );
+      } else if (nextStatus === 'cancelled') {
+        await client.query(
+          `
+          UPDATE bookings
+          SET
+            status = 'cancelled',
+            cancelled_at = NOW(),
+            cancelled_by_user_id = $2,
+            cancel_reason = $3,
+            updated_at = NOW()
+          WHERE id = $1
+          `,
+          [booking.id, req.adminUser.id, typeof reason === 'string' && reason.trim() ? reason.trim() : null]
+        );
+      }
+
+      await client.query('COMMIT');
+
+      if (nextStatus === 'cancelled') {
+        await notifications.notifyBookingCancelled(booking);
+      }
+
+      return res.status(200).json({
+        status: 'ok',
+        message: `Booking updated to ${nextStatus}`,
+        bookingReference: booking.booking_reference
+      });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Admin booking status update error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not update booking status'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+app.get('/api/v1/menu', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        md.file_name,
+        md.storage_path,
+        md.mime_type,
+        md.file_size_bytes,
+        md.created_at
+      FROM menu_documents md
+      JOIN venues v
+        ON v.id = md.venue_id
+      WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
+        AND md.is_active = TRUE
+      LIMIT 1
+    `);
+
+    if (result.rowCount === 0) {
+      return res.status(200).json({ menu: null });
+    }
+
+    const doc = result.rows[0];
+
+    return res.status(200).json({
+      menu: {
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        fileSizeBytes: Number(doc.file_size_bytes),
+        publishedAt: doc.created_at,
+        url: `${PUBLIC_PREFIX}/${doc.storage_path}`
+      }
+    });
+  } catch (error) {
+    console.error('Get public menu error:', error.message);
+
+    return res.status(500).json({
+      status: 'failed',
+      message: 'Could not load menu'
+    });
+  }
+});
+
+app.get(
+  '/api/v1/admin/menu',
+  requireApprovedAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          md.id,
+          md.file_name,
+          md.storage_path,
+          md.mime_type,
+          md.file_size_bytes,
+          md.is_active,
+          md.created_at,
+          u.display_name AS uploaded_by_name
+        FROM menu_documents md
+        JOIN venues v
+          ON v.id = md.venue_id
+        LEFT JOIN users u
+          ON u.id = md.uploaded_by_user_id
+        WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
+        ORDER BY md.created_at DESC
+      `);
+
+      return res.status(200).json({
+        status: 'ok',
+        documents: result.rows.map((row) => ({
+          ...row,
+          file_size_bytes: Number(row.file_size_bytes),
+          url: `${PUBLIC_PREFIX}/${row.storage_path}`
+        }))
+      });
+    } catch (error) {
+      console.error('Admin menu list error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not load menu documents'
+      });
+    }
+  }
+);
+
+app.post(
+  '/api/v1/admin/menu',
+  requireApprovedAdmin,
+  menuUpload.single('menuFile'),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A menu file (PDF, JPG, or PNG) is required'
+      });
+    }
+
+    let client;
+
+    try {
+      const { storagePath } = saveMenuFile(req.file.buffer, req.file.mimetype);
+
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const venueResult = await client.query(
+        `SELECT id FROM venues WHERE venue_reference = 'BAR185-MARRICKVILLE'`
+      );
+
+      const venueId = venueResult.rows[0].id;
+
+      await client.query(
+        `
+        UPDATE menu_documents
+        SET is_active = FALSE, updated_at = NOW()
+        WHERE venue_id = $1 AND is_active = TRUE
+        `,
+        [venueId]
+      );
+
+      const insertResult = await client.query(
+        `
+        INSERT INTO menu_documents (
+          venue_id, file_name, storage_path, mime_type, file_size_bytes, uploaded_by_user_id, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+        RETURNING id, file_name, storage_path, mime_type, file_size_bytes, created_at
+        `,
+        [
+          venueId,
+          req.file.originalname,
+          storagePath,
+          req.file.mimetype,
+          req.file.size,
+          req.adminUser.id
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      const document = insertResult.rows[0];
+
+      return res.status(201).json({
+        status: 'ok',
+        message: 'Menu published',
+        document: {
+          ...document,
+          file_size_bytes: Number(document.file_size_bytes),
+          url: `${PUBLIC_PREFIX}/${storagePath}`
+        }
+      });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Menu upload error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not publish menu'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+// Multer's fileFilter/size-limit errors reach us via Express's error-handling
+// middleware (four-argument signature), not the normal request pipeline --
+// without this, they'd fall through to Express's default HTML error page
+// instead of the JSON responses the rest of this API returns.
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError || /file/i.test(error.message || '')) {
+    return res.status(400).json({
+      status: 'failed',
+      message: error.message
+    });
+  }
+
+  console.error('Unhandled error:', error.message);
+
+  return res.status(500).json({
+    status: 'failed',
+    message: 'Unexpected server error'
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Bar 185 API running on http://localhost:${PORT}`);

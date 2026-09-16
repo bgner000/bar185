@@ -1,49 +1,57 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import SectionHead from '../components/SectionHead'
-import { menuCategories } from '../data/menu'
-import { formatCurrency } from '../lib/format'
+import PdfViewer from '../components/PdfViewer'
+import { LoadingState, EmptyState, Alert } from '../components/Feedback'
+import api, { API_ORIGIN } from '../lib/api'
 
 function Menu() {
-  const [activeCategory, setActiveCategory] = useState(menuCategories[0].id)
-  const category = menuCategories.find((item) => item.id === activeCategory)
+  const [menu, setMenu] = useState(undefined) // undefined = loading, null = none published
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .getPublicMenu()
+      .then((data) => setMenu(data.menu))
+      .catch(() => setError('Could not load the menu right now. Please try again shortly.'))
+  }, [])
+
+  const menuUrl = menu ? `${API_ORIGIN}${menu.url}` : null
+  const isImage = menu?.mimeType?.startsWith('image/')
 
   return (
     <section className="section">
-      <div className="container">
-        <SectionHead eyebrow="Menu" title="Cocktails, Wine & Small Plates" center>
-          Prices in AUD. Our menu is seasonal and changes throughout the year.
+      <div className="container narrow">
+        <SectionHead eyebrow="Menu" title="Our Menu" center>
+          Cocktails, wine, beer, and small plates — updated by our team as the season changes.
         </SectionHead>
 
-        <div className="menu-tabs" role="tablist" aria-label="Menu categories">
-          {menuCategories.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={activeCategory === item.id}
-              className={`menu-tab${activeCategory === item.id ? ' active' : ''}`}
-              onClick={() => setActiveCategory(item.id)}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
+        {error && <Alert type="error">{error}</Alert>}
 
-        <div className="menu-panel">
-          <p className="menu-panel-description">{category.description}</p>
+        {menu === undefined && !error && <LoadingState label="Loading menu…" />}
 
-          <ul className="menu-list">
-            {category.items.map((item) => (
-              <li key={item.name} className="menu-list-item">
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>{item.description}</p>
+        {menu === null && !error && (
+          <EmptyState label="Our menu will be published here shortly — please check back soon." />
+        )}
+
+        {menu && (
+          <div className="menu-viewer-wrap">
+            {isImage ? (
+              <div className="pdf-viewer">
+                <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
+                <div className="pdf-viewer-links">
+                  <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                    Open Full Size
+                  </a>
+                  <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
+                    Download
+                  </a>
                 </div>
-                <span className="menu-price">{formatCurrency(item.price)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+              </div>
+            ) : (
+              <PdfViewer url={menuUrl} fileName={menu.fileName} />
+            )}
+          </div>
+        )}
       </div>
     </section>
   )
