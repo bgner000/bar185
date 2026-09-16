@@ -129,6 +129,38 @@ async function sendCode({ channel, email, phone, ipAddress }) {
     const codeHash = hashCode(code, destination);
     const verificationReference = newVerificationReference();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    const content = templates.verificationCode({ code, expiresInMinutes: OTP_EXPIRY_MINUTES });
+
+    // Sent directly through the provider, never through notification_jobs --
+    // that table is a permanent log, and the message body here is the one
+    // place the plaintext code briefly exists in transit. It must not be
+    // written to any durable row.
+    //
+    // Delivery is attempted BEFORE anything is written to the database.
+    // verification_requests exists to record codes a customer can actually
+    // receive and act on -- a row for a code that was never delivered would
+    // still count toward the resend cooldown and rate limit on the very
+    // next attempt, turning a provider outage into "please wait" instead of
+    // a clear failure. Dev-only: logs that a request was made, never the
+    // code itself (see the OTP_DEV_LOG_CODE block below, gated separately).
+    console.log(`[DEV OTP] verification send requested (channel=${channel})`);
+
+    const sendResult =
+      channel === 'email'
+        ? await sendEmail({ to: destination, subject: content.subject, html: content.html, text: content.text })
+        : await sendSms({ to: destination, body: content.sms });
+
+    if (!sendResult.ok) {
+      console.error('Verification send failed:', sendResult.error);
+      return { ok: false, status: 502, message: GENERIC_SEND_FAILURE };
+    }
+
+    // Development-only: makes local testing possible without a configured
+    // provider or reading raw table rows. Never runs when NODE_ENV is
+    // 'production', and never reaches any HTTP response -- console only.
+    if (process.env.NODE_ENV !== 'production' && process.env.OTP_DEV_LOG_CODE === 'true') {
+      console.log(`[DEV OTP] code for ${destination}: ${code}`);
+    }
 
     await pool.query(
       `
@@ -139,22 +171,6 @@ async function sendCode({ channel, email, phone, ipAddress }) {
       `,
       [verificationReference, channel, destination, codeHash, MAX_VERIFY_ATTEMPTS, expiresAt.toISOString(), ipAddress || null]
     );
-
-    const content = templates.verificationCode({ code, expiresInMinutes: OTP_EXPIRY_MINUTES });
-
-    // Sent directly through the provider, never through notification_jobs --
-    // that table is a permanent log, and the message body here is the one
-    // place the plaintext code briefly exists in transit. It must not be
-    // written to any durable row.
-    const sendResult =
-      channel === 'email'
-        ? await sendEmail({ to: destination, subject: content.subject, html: content.html, text: content.text })
-        : await sendSms({ to: destination, body: content.sms });
-
-    if (!sendResult.ok) {
-      console.error('Verification send failed:', sendResult.error);
-      return { ok: false, status: 502, message: GENERIC_SEND_FAILURE };
-    }
 
     return {
       ok: true,
