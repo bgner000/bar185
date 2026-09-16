@@ -5,6 +5,238 @@ import StatusBadge from '../components/StatusBadge'
 import { Alert, LoadingState, EmptyState } from '../components/Feedback'
 import { formatDateTime } from '../lib/format'
 
+function toDateValue(isoString) {
+  if (!isoString) return ''
+
+  const date = new Date(isoString)
+  const pad = (n) => String(n).padStart(2, '0')
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function toTimeValue(isoString) {
+  if (!isoString) return ''
+
+  const date = new Date(isoString)
+  const pad = (n) => String(n).padStart(2, '0')
+
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// A true overlay modal (not an inline block) so Edit always appears right
+// where the admin is looking, however far down the Upcoming/History list
+// they've scrolled -- an inline form injected at the top of the page reads
+// as "the button did nothing" once the list is long. Content fields only:
+// status changes stay on the card's own Publish/Unpublish/Cancel/Archive
+// buttons, so editing details can never silently change what's public.
+function EventEditModal({ event, onSave, onClose }) {
+  const [form, setForm] = useState({
+    title: event.title,
+    tag: event.tag || '',
+    description: event.description || '',
+    startDate: toDateValue(event.starts_at),
+    startTime: toTimeValue(event.starts_at),
+    endDate: toDateValue(event.ends_at),
+    endTime: toTimeValue(event.ends_at),
+  })
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleChange = (changeEvent) => {
+    const { name, value } = changeEvent.target
+    setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const handleSubmit = async () => {
+    if (!form.title.trim()) {
+      setError('Event title is required.')
+      return
+    }
+
+    if (!form.startDate || !form.startTime) {
+      setError('Start date and start time are required.')
+      return
+    }
+
+    if ((form.endDate && !form.endTime) || (!form.endDate && form.endTime)) {
+      setError('Set both an end date and an end time, or leave both blank.')
+      return
+    }
+
+    const startsAt = new Date(`${form.startDate}T${form.startTime}`)
+    const endsAt = form.endDate && form.endTime ? new Date(`${form.endDate}T${form.endTime}`) : null
+
+    if (Number.isNaN(startsAt.getTime())) {
+      setError('Start date/time is invalid.')
+      return
+    }
+
+    if (endsAt && Number.isNaN(endsAt.getTime())) {
+      setError('End date/time is invalid.')
+      return
+    }
+
+    if (endsAt && endsAt <= startsAt) {
+      setError('End time must be after the start time.')
+      return
+    }
+
+    setSubmitting(true)
+    setError('')
+
+    try {
+      await onSave({
+        title: form.title,
+        description: form.description,
+        tag: form.tag,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt ? endsAt.toISOString() : null,
+      })
+    } catch (err) {
+      setError(err.message)
+      setSubmitting(false)
+    }
+  }
+
+  const handleOverlayKeyDown = (event2) => {
+    if (event2.key === 'Escape' && !submitting) onClose()
+  }
+
+  return (
+    <div
+      className="modal-overlay"
+      role="presentation"
+      onClick={() => !submitting && onClose()}
+      onKeyDown={handleOverlayKeyDown}
+    >
+      <div
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit event"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+      >
+        <h3>Edit Event</h3>
+
+        {error && <div className="alert alert-error modal-error">{error}</div>}
+
+        <div className="field">
+          <label htmlFor="edit-event-title">Event title</label>
+          <input
+            id="edit-event-title"
+            name="title"
+            value={form.title}
+            onChange={handleChange}
+            disabled={submitting}
+            required
+          />
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="edit-event-tag">Tag / category</label>
+            <input
+              id="edit-event-tag"
+              name="tag"
+              placeholder="Live Music, Trivia, Tasting…"
+              value={form.tag}
+              onChange={handleChange}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="field">
+            <span className="admin-detail-label">Status</span>
+            <div>
+              <StatusBadge status={event.status} />
+            </div>
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="edit-event-description">Description</label>
+          <textarea
+            id="edit-event-description"
+            name="description"
+            value={form.description}
+            onChange={handleChange}
+            disabled={submitting}
+            rows={3}
+          />
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="edit-event-start-date">Start date</label>
+            <input
+              id="edit-event-start-date"
+              name="startDate"
+              type="date"
+              value={form.startDate}
+              onChange={handleChange}
+              disabled={submitting}
+              required
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-event-start-time">Start time</label>
+            <input
+              id="edit-event-start-time"
+              name="startTime"
+              type="time"
+              value={form.startTime}
+              onChange={handleChange}
+              disabled={submitting}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="edit-event-end-date">End date (optional)</label>
+            <input
+              id="edit-event-end-date"
+              name="endDate"
+              type="date"
+              value={form.endDate}
+              onChange={handleChange}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="edit-event-end-time">End time (optional)</label>
+            <input
+              id="edit-event-end-time"
+              name="endTime"
+              type="time"
+              value={form.endTime}
+              onChange={handleChange}
+              disabled={submitting}
+            />
+          </div>
+        </div>
+
+        <p className="field-hint">
+          To publish, unpublish, cancel, or archive this event, use the buttons on the event
+          card — saving here only updates its details, never its status.
+        </p>
+
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? 'Saving…' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const EMPTY_FORM = { title: '', description: '', tag: '', startsAt: '', endsAt: '' }
 
 const TERMINAL_STATUSES = ['cancelled', 'completed', 'archived']
@@ -15,18 +247,6 @@ const TERMINAL_STATUSES = ['cancelled', 'completed', 'archived']
 function isFinished(event) {
   const endBasis = event.ends_at || event.starts_at
   return new Date(endBasis).getTime() <= Date.now()
-}
-
-// <input type="datetime-local"> reads/writes local wall-clock time with no
-// timezone of its own -- same convention BookingForm/EventEnquiryForm
-// already use elsewhere in this app, so this just mirrors that.
-function toDateTimeLocalValue(isoString) {
-  if (!isoString) return ''
-
-  const date = new Date(isoString)
-  const pad = (n) => String(n).padStart(2, '0')
-
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function EventForm({ initial, submitLabel, onSubmit, onCancel }) {
@@ -319,22 +539,6 @@ function EventsPanel() {
         <EventForm submitLabel="Create Event" onSubmit={handleCreate} onCancel={() => setShowCreateForm(false)} />
       )}
 
-      {editingEvent && (
-        <EventForm
-          key={editingEvent.event_reference}
-          initial={{
-            title: editingEvent.title,
-            description: editingEvent.description || '',
-            tag: editingEvent.tag || '',
-            startsAt: toDateTimeLocalValue(editingEvent.starts_at),
-            endsAt: toDateTimeLocalValue(editingEvent.ends_at),
-          }}
-          submitLabel="Save Changes"
-          onSubmit={handleEdit}
-          onCancel={() => setEditingReference('')}
-        />
-      )}
-
       <h3>Upcoming</h3>
       {upcoming.length === 0 ? (
         <EmptyState label="No upcoming events." />
@@ -399,6 +603,15 @@ function EventsPanel() {
             </div>
           </dl>
         </ConfirmDialog>
+      )}
+
+      {editingEvent && (
+        <EventEditModal
+          key={editingEvent.event_reference}
+          event={editingEvent}
+          onSave={handleEdit}
+          onClose={() => setEditingReference('')}
+        />
       )}
     </div>
   )
