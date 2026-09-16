@@ -1,9 +1,10 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHead from '../components/SectionHead'
 import VenueImage from '../components/VenueImage'
 import { venueImages } from '../data/venueImages'
 import { menuCategories } from '../data/menu'
-import { upcomingEvents } from '../data/events'
+import api from '../lib/api'
 import { formatDate, formatCurrency } from '../lib/format'
 
 const featuredItems = [
@@ -14,6 +15,15 @@ const featuredItems = [
 ]
 
 function Home() {
+  const [events, setEvents] = useState([])
+
+  useEffect(() => {
+    api
+      .getEvents()
+      .then((data) => setEvents(data.events.slice(0, 3)))
+      .catch(() => setEvents([]))
+  }, [])
+
   return (
     <>
       <section className="hero hero-photo-section">
@@ -125,30 +135,32 @@ function Home() {
         </div>
       </section>
 
-      <section className="section section-tint">
-        <div className="container">
-          <SectionHead eyebrow="What's On" title="Upcoming at Bar 185">
-            Live music, tastings, and nights worth putting in the diary.
-          </SectionHead>
+      {events.length > 0 && (
+        <section className="section section-tint">
+          <div className="container">
+            <SectionHead eyebrow="What's On" title="Upcoming at Bar 185">
+              Live music, tastings, and nights worth putting in the diary.
+            </SectionHead>
 
-          <div className="grid grid-3">
-            {upcomingEvents.map((event) => (
-              <div className="card event-preview-card" key={event.id}>
-                <span className="badge badge-info">{event.tag}</span>
-                <h3>{event.title}</h3>
-                <p>{event.tagline}</p>
-                <span className="event-date">{formatDate(event.startsAt)}</span>
-              </div>
-            ))}
-          </div>
+            <div className="grid grid-3">
+              {events.map((event) => (
+                <div className="card event-preview-card" key={event.eventReference}>
+                  <span className="badge badge-info">{event.tag || 'Event'}</span>
+                  <h3>{event.title}</h3>
+                  {event.description && <p>{event.description}</p>}
+                  <span className="event-date">{formatDate(event.startsAt)}</span>
+                </div>
+              ))}
+            </div>
 
-          <div className="section-cta">
-            <Link to="/events" className="btn btn-secondary">
-              View All Events
-            </Link>
+            <div className="section-cta">
+              <Link to="/events" className="btn btn-secondary">
+                View All Events
+              </Link>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="section cta-band">
         <div className="container cta-band-inner">

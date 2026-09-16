@@ -141,6 +141,31 @@ export const api = {
     formData.append('menuFile', file)
     return uploadRequest('/admin/menu', formData)
   },
+
+  getEvents: () => request('/events'),
+
+  getAdminEvents: () => request('/admin/events', { headers: adminHeaders() }),
+
+  createEvent: (payload) =>
+    request('/admin/events', {
+      method: 'POST',
+      headers: adminHeaders(),
+      body: JSON.stringify(payload),
+    }),
+
+  updateEvent: (eventReference, payload) =>
+    request(`/admin/events/${encodeURIComponent(eventReference)}`, {
+      method: 'PATCH',
+      headers: adminHeaders(),
+      body: JSON.stringify(payload),
+    }),
+
+  updateEventStatus: (eventReference, status) =>
+    request(`/admin/events/${encodeURIComponent(eventReference)}/status`, {
+      method: 'PATCH',
+      headers: adminHeaders(),
+      body: JSON.stringify({ status }),
+    }),
 }
 
 export default api
