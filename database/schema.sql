@@ -697,3 +697,23 @@ ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_jobs ENABLE ROW LEVEL SECURITY;
 
 COMMIT;
+
+
+-- =========================================================
+-- 9. MIGRATION: ADDITIONAL NOTIFICATION TYPES
+-- =========================================================
+-- notification_type originally had no value for a cancellation notice, a
+-- large-group request being approved into a real booking, or a large-group
+-- request being declined -- 'booking_confirmation' and
+-- 'large_group_acknowledgement' cover the standard-booking and
+-- large-group-received cases, but there was nothing correct to use for
+-- these three. This adds only the missing values; it does not remove,
+-- rename, or restructure anything that already existed.
+--
+-- ALTER TYPE ... ADD VALUE cannot run inside the same transaction as
+-- other statements that use the new value, so each runs as its own
+-- statement. IF NOT EXISTS makes this safe to re-run.
+
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'booking_cancellation';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'large_group_confirmation';
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'large_group_declined';

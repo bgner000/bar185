@@ -1,17 +1,29 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHead from '../components/SectionHead'
+import { LoadingState } from '../components/Feedback'
+import api from '../lib/api'
+import { formatHourLabel, weekdayName } from '../lib/format'
 
-const HOURS = [
-  { day: 'Monday', hours: 'Closed' },
-  { day: 'Tuesday', hours: '4pm – 11pm' },
-  { day: 'Wednesday', hours: '4pm – 11pm' },
-  { day: 'Thursday', hours: '4pm – Midnight' },
-  { day: 'Friday', hours: '3pm – 1am' },
-  { day: 'Saturday', hours: '2pm – 1am' },
-  { day: 'Sunday', hours: '2pm – 10pm' },
-]
+// Monday-first display order, mapping onto the day_of_week values
+// (0 = Sunday ... 6 = Saturday) that venue_hours and the booking-slot
+// generator both already use.
+const DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
 
 function Contact() {
+  const [hoursByDay, setHoursByDay] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .getVenueHours()
+      .then((data) => {
+        const map = new Map(data.hours.map((row) => [row.day_of_week, row]))
+        setHoursByDay(map)
+      })
+      .catch(() => setError('Could not load opening hours right now.'))
+  }, [])
+
   return (
     <section className="section">
       <div className="container contact-grid">
@@ -51,14 +63,30 @@ function Contact() {
 
         <div className="card card-raised hours-card">
           <h3>Opening Hours</h3>
-          <ul className="hours-list">
-            {HOURS.map((row) => (
-              <li key={row.day}>
-                <span>{row.day}</span>
-                <span>{row.hours}</span>
-              </li>
-            ))}
-          </ul>
+
+          {!hoursByDay && !error && <LoadingState label="Loading hours…" />}
+          {error && <p className="field-hint">{error}</p>}
+
+          {hoursByDay && (
+            <ul className="hours-list">
+              {DISPLAY_ORDER.map((dayOfWeek) => {
+                const row = hoursByDay.get(dayOfWeek)
+                const label = weekdayName(dayOfWeek)
+                const hours =
+                  !row || row.is_closed
+                    ? 'Closed'
+                    : `${formatHourLabel(row.opens_at)} – ${formatHourLabel(row.closes_at)}`
+
+                return (
+                  <li key={dayOfWeek}>
+                    <span>{label}</span>
+                    <span>{hours}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
           <p className="field-hint">Kitchen closes 30 minutes before last drinks.</p>
         </div>
       </div>

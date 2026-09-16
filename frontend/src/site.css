@@ -416,79 +416,127 @@
   background: #1a1408;
 }
 
-/* ---------- time slot picker ---------- */
+/* ---------- compact time picker ---------- */
 
-.time-slot-picker-date {
-  display: block;
-  font-family: var(--serif);
-  font-size: 1.15rem;
-  color: var(--gold-bright);
-  margin-bottom: 12px;
+.time-picker {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  max-width: 260px;
 }
 
-.time-slot-chips {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-  gap: 8px;
+.time-picker-trigger {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--ink-soft);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease;
 }
 
-@media (max-width: 480px) {
-  .time-slot-chips {
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    grid-template-rows: repeat(3, auto);
-    grid-auto-columns: minmax(76px, 1fr);
-    overflow-x: auto;
-    padding-bottom: 6px;
-    scroll-snap-type: x proximity;
-  }
-
-  .time-chip {
-    scroll-snap-align: start;
-  }
+.time-picker-trigger svg {
+  color: var(--gold);
+  flex-shrink: 0;
 }
 
-.time-chip {
+.time-picker-trigger:hover {
+  border-color: var(--border-strong);
+}
+
+.time-picker-steppers {
   display: flex;
   flex-direction: column;
+  width: 34px;
+}
+
+.time-picker-step {
+  flex: 1;
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 9px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  justify-content: center;
   background: var(--ink-soft);
-  color: var(--text);
+  border: 1px solid var(--border);
+  color: var(--gold-bright);
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
-.time-chip:hover:not(:disabled) {
-  border-color: var(--gold);
+.time-picker-step:first-child {
+  border-radius: 0 var(--radius-sm) 0 0;
+  border-bottom: none;
 }
 
-.time-chip-time {
-  font-weight: 600;
-  font-size: 0.95rem;
+.time-picker-step:last-child {
+  border-radius: 0 0 var(--radius-sm) 0;
 }
 
-.time-chip-seats {
-  font-size: 0.72rem;
+.time-picker-step:hover:not(:disabled) {
+  background: var(--gold-dim);
+}
+
+.time-picker-step:disabled {
   color: var(--text-faint);
+  cursor: not-allowed;
 }
 
-.time-chip.selected {
+.time-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+  padding: 6px;
+}
+
+.time-picker-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.92rem;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.time-picker-option:hover {
+  background: var(--gold-dim);
+}
+
+.time-picker-option.selected {
   background: var(--gold);
-  border-color: var(--gold);
-}
-
-.time-chip.selected .time-chip-time,
-.time-chip.selected .time-chip-seats {
   color: #1a1408;
 }
 
-.time-chip.full {
-  opacity: 0.4;
-  cursor: not-allowed;
+.time-picker-option-seats {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.time-picker-option.selected .time-picker-option-seats {
+  color: rgba(26, 20, 8, 0.7);
 }
 
 /* ---------- book page ---------- */
