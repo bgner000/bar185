@@ -169,8 +169,23 @@ function BookingForm() {
         return
       }
 
+      // A 404/409 here means the slot the visitor picked is no longer what
+      // they saw (someone else booked it, staff closed it, etc.). Refresh
+      // real availability from the backend rather than leaving stale chips
+      // on screen, and make them pick a time again.
+      const isStaleAvailability = error.status === 404 || error.status === 409
+
       setStatus('error')
-      setResult({ message: error.message })
+      setResult({
+        message: isStaleAvailability
+          ? `${error.message} Availability has been refreshed below — please choose a time again.`
+          : error.message,
+      })
+
+      if (isStaleAvailability) {
+        setForm((current) => ({ ...current, bookingSlotId: '' }))
+        reloadSlots()
+      }
     }
   }
 

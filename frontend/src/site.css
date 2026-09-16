@@ -427,9 +427,25 @@
 }
 
 .time-slot-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .time-slot-chips {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-template-rows: repeat(3, auto);
+    grid-auto-columns: minmax(76px, 1fr);
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scroll-snap-type: x proximity;
+  }
+
+  .time-chip {
+    scroll-snap-align: start;
+  }
 }
 
 .time-chip {
@@ -437,8 +453,7 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-width: 92px;
-  padding: 10px 16px;
+  padding: 9px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--ink-soft);
