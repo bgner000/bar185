@@ -1,5 +1,37 @@
 const SYDNEY_TZ = 'Australia/Sydney'
 
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+]
+
+// Formats a plain "HH:MM:SS" opening/closing time (already Sydney wall-clock,
+// as stored in venue_hours) as compact copy like "4pm" or "11:30pm", with
+// midnight shown as "Midnight" rather than "12am".
+export function formatHourLabel(timeString) {
+  if (!timeString) return ''
+
+  const [hourStr, minuteStr] = timeString.split(':')
+  const hour = Number(hourStr)
+  const minute = Number(minuteStr)
+
+  if (hour === 0 && minute === 0) return 'Midnight'
+
+  const period = hour < 12 ? 'am' : 'pm'
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12
+
+  return minute === 0 ? `${hour12}${period}` : `${hour12}:${String(minute).padStart(2, '0')}${period}`
+}
+
+export function weekdayName(dayOfWeek) {
+  return WEEKDAY_NAMES[dayOfWeek] || ''
+}
+
 export function formatDateTime(value) {
   if (!value) return '—'
 

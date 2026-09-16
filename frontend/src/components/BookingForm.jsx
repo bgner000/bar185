@@ -3,7 +3,7 @@ import api from '../lib/api'
 import { sydneyDateKey, todaySydneyDateKey } from '../lib/format'
 import { Alert, LoadingState, EmptyState } from './Feedback'
 import BookingCalendar from './BookingCalendar'
-import TimeSlotPicker from './TimeSlotPicker'
+import TimePicker from './TimePicker'
 
 const EMPTY_FORM = {
   bookingSlotId: '',
@@ -123,7 +123,7 @@ function BookingForm() {
       })
 
       setStatus('confirmed')
-      setResult({ reference: data.booking.booking_reference })
+      setResult({ reference: data.booking.booking_reference, hasPhone: Boolean(form.customerPhone.trim()) })
       setForm(EMPTY_FORM)
       setSelectedDate(null)
       reloadSlots()
@@ -196,9 +196,12 @@ function BookingForm() {
     return (
       <div className="card card-raised booking-result">
         <Alert type="success" title="Booking confirmed">
-          Your table is booked. Reference: <strong>{result.reference}</strong>
+          Booking confirmed. Reference: <strong>{result.reference}</strong>.
         </Alert>
-        <p>A confirmation has been recorded against this reference. Keep it handy if you need to cancel.</p>
+        <p>
+          Confirmation will be sent to your email{result.hasPhone ? ' and mobile' : ''}. Keep your
+          reference handy if you need to cancel.
+        </p>
         <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
         </button>
@@ -209,11 +212,13 @@ function BookingForm() {
   if (status === 'pending' && result) {
     return (
       <div className="card card-raised booking-result">
-        <Alert type="info" title="Large-group request submitted">
-          This party size needs staff review before it's confirmed. Reference:{' '}
-          <strong>{result.reference}</strong>
+        <Alert type="info" title="Request received">
+          Request received and pending staff review. Reference: <strong>{result.reference}</strong>.
         </Alert>
-        <p>Our team will review availability and confirm by email. This is not yet a confirmed booking.</p>
+        <p>
+          A confirmation of receipt will be sent to your email and mobile. Our team will review
+          availability and follow up by email — this is not yet a confirmed booking.
+        </p>
         <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
         </button>
@@ -251,7 +256,7 @@ function BookingForm() {
       {hasAnyAvailability && !slotsLoading && (
         <div className="field">
           <label>Choose a time</label>
-          <TimeSlotPicker
+          <TimePicker
             dateKey={effectiveSelectedDate}
             slots={dateSlots}
             selectedSlotId={form.bookingSlotId}

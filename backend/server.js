@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const pool = require('./db');
+const notifications = require('./notifications');
 
 const app = express();
 const PORT = 3000;
@@ -119,6 +120,36 @@ app.get('/api/v1/booking-slots', async (req, res) => {
     });
   }
 });
+app.get('/api/v1/venue-hours', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        vh.day_of_week,
+        vh.opens_at,
+        vh.closes_at,
+        vh.is_closed,
+        v.timezone
+      FROM venue_hours vh
+      JOIN venues v
+        ON v.id = vh.venue_id
+      WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
+        AND v.is_active = TRUE
+      ORDER BY vh.day_of_week ASC
+    `);
+
+    res.status(200).json({
+      hours: result.rows
+    });
+  } catch (error) {
+    console.error('Venue hours error:', error.message);
+
+    res.status(500).json({
+      status: 'failed',
+      message: 'Could not load venue hours'
+    });
+  }
+});
+
 app.post('/api/v1/bookings', async (req, res) => {
   const {
     bookingSlotId,
@@ -160,6 +191,7 @@ app.post('/api/v1/bookings', async (req, res) => {
       SELECT
         bs.id,
         bs.starts_at,
+        bs.ends_at,
         bs.total_capacity,
         bs.reserved_capacity,
         bs.is_open,
@@ -322,6 +354,8 @@ app.post('/api/v1/bookings', async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    await notifications.notifyBookingConfirmed(bookingResult.rows[0], slot);
 
     return res.status(201).json({
       status: 'confirmed',
@@ -615,6 +649,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
 
     await client.query('COMMIT');
 
+    await notifications.notifyLargeGroupPending(requestResult.rows[0]);
+
     return res.status(201).json(responseBody);
   } catch (error) {
     if (client) {
@@ -899,7 +935,9 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
         booking_reference,
         booking_slot_id,
         party_size,
+        customer_name,
         customer_email,
+        customer_phone,
         status
       FROM bookings
       WHERE booking_reference = $1
@@ -986,6 +1024,8 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
     );
 
     await client.query('COMMIT');
+
+    await notifications.notifyBookingCancelled(booking);
 
     return res.status(200).json({
       status: 'cancelled',
@@ -1235,6 +1275,8 @@ app.patch(
 
       await client.query('COMMIT');
 
+      await notifications.notifyBookingConfirmed(bookingResult.rows[0], slot);
+
       return res.status(200).json({
         status: 'confirmed',
         message: 'Large-group booking approved',
@@ -1279,7 +1321,10 @@ app.patch(
         SELECT
           id,
           request_reference,
-          status
+          status,
+          customer_name,
+          customer_email,
+          customer_phone
         FROM large_group_booking_requests
         WHERE request_reference = $1
         FOR UPDATE
@@ -1334,6 +1379,8 @@ app.patch(
       );
 
       await client.query('COMMIT');
+
+      await notifications.notifyLargeGroupDeclined(request);
 
       return res.status(200).json({
         status: 'declined',

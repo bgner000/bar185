@@ -40,6 +40,8 @@ export const api = {
 
   getBookingSlots: () => request('/booking-slots'),
 
+  getVenueHours: () => request('/venue-hours'),
+
   createBooking: (payload) =>
     request('/bookings', {
       method: 'POST',
