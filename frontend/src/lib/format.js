@@ -35,6 +35,37 @@ export function formatTime(value) {
   })
 }
 
+// Returns the Sydney-local calendar date as 'YYYY-MM-DD', independent of the
+// viewer's own timezone. Used to group booking slots by the day staff/
+// customers actually mean, not the UTC day the timestamp happens to fall on.
+export function sydneyDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value)
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SYDNEY_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+export function todaySydneyDateKey() {
+  return sydneyDateKey(new Date())
+}
+
+export function formatDateKeyLong(dateKey) {
+  if (!dateKey) return ''
+
+  const [year, month, day] = dateKey.split('-').map(Number)
+
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-AU', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
 export function formatCurrency(value) {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',

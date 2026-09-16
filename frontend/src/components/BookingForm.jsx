@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../lib/api'
-import { formatDateTime } from '../lib/format'
-import { Alert, LoadingState } from './Feedback'
+import { sydneyDateKey, todaySydneyDateKey } from '../lib/format'
+import { Alert, LoadingState, EmptyState } from './Feedback'
+import BookingCalendar from './BookingCalendar'
+import TimeSlotPicker from './TimeSlotPicker'
 
 const EMPTY_FORM = {
   bookingSlotId: '',
@@ -17,11 +19,13 @@ function BookingForm() {
   const [slotsLoading, setSlotsLoading] = useState(true)
   const [slotsError, setSlotsError] = useState('')
 
+  const [selectedDate, setSelectedDate] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [status, setStatus] = useState('idle') // idle | submitting | confirmed | pending | error
   const [result, setResult] = useState(null)
 
   const largeGroupIdempotencyKey = useRef(null)
+  const todayKey = todaySydneyDateKey()
 
   const applySlotsResponse = (promise) =>
     promise
@@ -39,11 +43,63 @@ function BookingForm() {
     applySlotsResponse(api.getBookingSlots())
   }, [])
 
+  // Group the backend's actual booking-slot records by their Sydney-local
+  // calendar date, so availability shown here always traces back to real data.
+  const availability = useMemo(() => {
+    const map = new Map()
+
+    for (const slot of slots) {
+      const key = sydneyDateKey(slot.starts_at)
+      const seats = slot.total_capacity - slot.reserved_capacity
+
+      if (!map.has(key)) {
+        map.set(key, { slots: [], hasAvailability: false })
+      }
+
+      const entry = map.get(key)
+      entry.slots.push(slot)
+      if (seats > 0) entry.hasAvailability = true
+    }
+
+    for (const entry of map.values()) {
+      entry.slots.sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
+    }
+
+    return map
+  }, [slots])
+
+  // Default to the earliest date with real availability until the visitor
+  // explicitly picks one — computed during render rather than in an effect,
+  // since it's a derived value, not a synchronization with an external system.
+  const firstAvailableDate = useMemo(
+    () => [...availability.keys()].sort().find((key) => availability.get(key).hasAvailability) ?? null,
+    [availability]
+  )
+  const effectiveSelectedDate = selectedDate ?? firstAvailableDate
+
+  const selectDate = (dateKey) => {
+    setSelectedDate(dateKey)
+    setForm((current) => ({ ...current, bookingSlotId: '' }))
+    largeGroupIdempotencyKey.current = null
+  }
+
+  const selectSlot = (slotId) => {
+    largeGroupIdempotencyKey.current = null
+    setForm((current) => ({ ...current, bookingSlotId: String(slotId) }))
+  }
+
   const handleChange = (event) => {
     const { name, value } = event.target
     largeGroupIdempotencyKey.current = null
 
     setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const resetBooking = () => {
+    setStatus('idle')
+    setResult(null)
+    setForm(EMPTY_FORM)
+    setSelectedDate(null)
   }
 
   const handleSubmit = async (event) => {
@@ -55,7 +111,7 @@ function BookingForm() {
 
     if (!selectedSlot) {
       setStatus('error')
-      setResult({ message: 'Please select a booking time.' })
+      setResult({ message: 'Please select a date and time for your booking.' })
       return
     }
 
@@ -69,6 +125,7 @@ function BookingForm() {
       setStatus('confirmed')
       setResult({ reference: data.booking.booking_reference })
       setForm(EMPTY_FORM)
+      setSelectedDate(null)
       reloadSlots()
     } catch (error) {
       if (error.status === 422 && error.body?.status === 'large_group_required') {
@@ -81,18 +138,6 @@ function BookingForm() {
         }
 
         try {
-          const slotDate = new Date(selectedSlot.starts_at)
-
-          const dateParts = new Intl.DateTimeFormat('en-AU', {
-            timeZone: 'Australia/Sydney',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-          }).formatToParts(slotDate)
-
-          const dateValues = Object.fromEntries(dateParts.map(({ type, value }) => [type, value]))
-          const bookingDate = `${dateValues.year}-${dateValues.month}-${dateValues.day}`
-
           const idempotencyKey =
             largeGroupIdempotencyKey.current ??
             `lg-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -101,7 +146,7 @@ function BookingForm() {
 
           const largeGroupData = await api.createLargeGroupBookingRequest(
             {
-              bookingDate,
+              bookingDate: effectiveSelectedDate,
               slotStartAt: selectedSlot.starts_at,
               partySize: Number(form.partySize),
               customerName: form.customerName,
@@ -115,6 +160,7 @@ function BookingForm() {
           setResult({ reference: largeGroupData.request.request_reference })
           largeGroupIdempotencyKey.current = null
           setForm(EMPTY_FORM)
+          setSelectedDate(null)
         } catch (largeGroupError) {
           setStatus('error')
           setResult({ message: largeGroupError.message })
@@ -128,10 +174,8 @@ function BookingForm() {
     }
   }
 
-  const selectedSlot = slots.find((slot) => Number(slot.id) === Number(form.bookingSlotId))
-  const availableForSelected = selectedSlot
-    ? selectedSlot.total_capacity - selectedSlot.reserved_capacity
-    : null
+  const dateSlots = effectiveSelectedDate ? availability.get(effectiveSelectedDate)?.slots ?? [] : []
+  const hasAnyAvailability = [...availability.values()].some((entry) => entry.hasAvailability)
 
   if (status === 'confirmed' && result) {
     return (
@@ -140,7 +184,7 @@ function BookingForm() {
           Your table is booked. Reference: <strong>{result.reference}</strong>
         </Alert>
         <p>A confirmation has been recorded against this reference. Keep it handy if you need to cancel.</p>
-        <button type="button" className="btn btn-secondary" onClick={() => setStatus('idle')}>
+        <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
         </button>
       </div>
@@ -155,7 +199,7 @@ function BookingForm() {
           <strong>{result.reference}</strong>
         </Alert>
         <p>Our team will review availability and confirm by email. This is not yet a confirmed booking.</p>
-        <button type="button" className="btn btn-secondary" onClick={() => setStatus('idle')}>
+        <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
         </button>
       </div>
@@ -173,33 +217,33 @@ function BookingForm() {
       {slotsError && <Alert type="error">{slotsError}</Alert>}
 
       <div className="field">
-        <label htmlFor="bookingSlotId">Booking time</label>
+        <label>Choose a date</label>
 
         {slotsLoading ? (
-          <LoadingState label="Loading available times…" />
+          <LoadingState label="Loading availability…" />
+        ) : hasAnyAvailability ? (
+          <BookingCalendar
+            availability={availability}
+            selectedDate={effectiveSelectedDate}
+            onSelectDate={selectDate}
+            todayKey={todayKey}
+          />
         ) : (
-          <select
-            id="bookingSlotId"
-            name="bookingSlotId"
-            value={form.bookingSlotId}
-            onChange={handleChange}
-            required
-          >
-            <option value="">Select a time</option>
-
-            {slots.map((slot) => (
-              <option key={slot.id} value={slot.id}>
-                {formatDateTime(slot.starts_at)} — {slot.total_capacity - slot.reserved_capacity}{' '}
-                seats available
-              </option>
-            ))}
-          </select>
-        )}
-
-        {!slotsLoading && slots.length === 0 && !slotsError && (
-          <span className="field-hint">No upcoming booking times are open right now.</span>
+          !slotsError && <EmptyState label="No upcoming booking times are open right now." />
         )}
       </div>
+
+      {hasAnyAvailability && !slotsLoading && (
+        <div className="field">
+          <label>Choose a time</label>
+          <TimeSlotPicker
+            dateKey={effectiveSelectedDate}
+            slots={dateSlots}
+            selectedSlotId={form.bookingSlotId}
+            onSelectSlot={selectSlot}
+          />
+        </div>
+      )}
 
       <div className="field-row">
         <div className="field">
@@ -213,7 +257,7 @@ function BookingForm() {
             onChange={handleChange}
             required
           />
-          {availableForSelected !== null && Number(form.partySize) >= 9 && (
+          {Number(form.partySize) >= 9 && (
             <span className="field-hint">
               Parties of 9+ are routed to our team for large-group review.
             </span>
@@ -266,7 +310,11 @@ function BookingForm() {
         />
       </div>
 
-      <button type="submit" className="btn btn-primary btn-block" disabled={status === 'submitting'}>
+      <button
+        type="submit"
+        className="btn btn-primary btn-block"
+        disabled={status === 'submitting' || !form.bookingSlotId}
+      >
         {status === 'submitting' ? 'Submitting…' : 'Confirm Booking'}
       </button>
     </form>
