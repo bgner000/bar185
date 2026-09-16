@@ -30,38 +30,40 @@ function Menu() {
       />
 
       <section className="section">
-        <div className="container narrow">
+        <div className="container menu-page-container">
           <SectionHead eyebrow="Menu" title="Our Menu" center>
             Cocktails, wine, beer, and small plates — updated by our team as the season changes.
           </SectionHead>
 
-          {error && <Alert type="error">{error}</Alert>}
+          <div className="menu-viewer-frame">
+            {error && <Alert type="error">{error}</Alert>}
 
-          {menu === undefined && !error && <LoadingState label="Loading menu…" />}
+            {menu === undefined && !error && <LoadingState label="Loading menu…" />}
 
-          {menu === null && !error && (
-            <EmptyState label="Our menu will be published here shortly — please check back soon." />
-          )}
+            {menu === null && !error && (
+              <EmptyState label="Our menu will be published here shortly — please check back soon." />
+            )}
 
-          {menu && (
-            <div className="menu-viewer-wrap">
-              {isImage ? (
-                <div className="pdf-viewer">
-                  <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
-                  <div className="pdf-viewer-links">
-                    <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
-                      Open Full Size
-                    </a>
-                    <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
-                      Download
-                    </a>
+            {menu && (
+              <div className="menu-viewer-wrap">
+                {isImage ? (
+                  <div className="pdf-viewer">
+                    <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
+                    <div className="pdf-viewer-links">
+                      <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                        Open Full Size
+                      </a>
+                      <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
+                        Download
+                      </a>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <PdfViewer url={menuUrl} fileName={menu.fileName} />
-              )}
-            </div>
-          )}
+                ) : (
+                  <PdfViewer url={menuUrl} fileName={menu.fileName} />
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </>
