@@ -1,5 +1,11 @@
 const API_BASE_URL = 'http://localhost:3000/api/v1'
 
+// The backend also serves static files (uploaded menu documents) outside
+// the /api/v1 prefix, so callers that need an absolute URL for one of those
+// (e.g. an <a href> or a PDF viewer `src`) use this rather than hardcoding
+// the origin a second time.
+export const API_ORIGIN = 'http://localhost:3000'
+
 // Demo-only admin identification header. There is no real login system yet —
 // see instructions in AdminDashboard for how staff access is currently gated.
 export const ADMIN_DEMO_EMAIL = 'admin@bar185.local'
@@ -33,6 +39,33 @@ async function request(path, options = {}) {
 
 function adminHeaders() {
   return { 'X-Demo-User-Email': ADMIN_DEMO_EMAIL }
+}
+
+// Multipart uploads must not set Content-Type themselves — the browser needs
+// to add its own boundary — so this bypasses request()'s JSON default.
+async function uploadRequest(path, formData) {
+  let response
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: adminHeaders(),
+      body: formData,
+    })
+  } catch {
+    throw new Error('Could not reach the Bar 185 server. Please try again shortly.')
+  }
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const error = new Error(data.message || 'Something went wrong. Please try again.')
+    error.status = response.status
+    error.body = data
+    throw error
+  }
+
+  return data
 }
 
 export const api = {
@@ -76,10 +109,10 @@ export const api = {
       { method: 'PATCH', headers: adminHeaders() }
     ),
 
-  declineLargeGroupRequest: (requestReference) =>
+  declineLargeGroupRequest: (requestReference, reason) =>
     request(
       `/admin/large-group-booking-requests/${encodeURIComponent(requestReference)}/decline`,
-      { method: 'PATCH', headers: adminHeaders() }
+      { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ reason }) }
     ),
 
   updateEventEnquiryStatus: (enquiryReference, status) =>
@@ -88,6 +121,26 @@ export const api = {
       headers: adminHeaders(),
       body: JSON.stringify({ status }),
     }),
+
+  getAdminBookingsForDate: (date) =>
+    request(`/admin/bookings?date=${encodeURIComponent(date)}`, { headers: adminHeaders() }),
+
+  updateBookingStatus: (bookingReference, status, reason) =>
+    request(`/admin/bookings/${encodeURIComponent(bookingReference)}/status`, {
+      method: 'PATCH',
+      headers: adminHeaders(),
+      body: JSON.stringify({ status, reason }),
+    }),
+
+  getPublicMenu: () => request('/menu'),
+
+  getAdminMenuList: () => request('/admin/menu', { headers: adminHeaders() }),
+
+  uploadMenu: (file) => {
+    const formData = new FormData()
+    formData.append('menuFile', file)
+    return uploadRequest('/admin/menu', formData)
+  },
 }
 
 export default api

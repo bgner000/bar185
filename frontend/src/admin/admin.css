@@ -241,3 +241,298 @@
   margin-bottom: 0;
   max-width: 280px;
 }
+
+/* ---------- confirm dialog / modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(8, 6, 4, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  padding: 26px;
+}
+
+.modal-panel h3 {
+  font-size: 1.3rem;
+  margin-bottom: 10px;
+}
+
+.modal-description {
+  margin-bottom: 16px;
+}
+
+.modal-reason-field {
+  margin-top: 4px;
+}
+
+.modal-error {
+  margin-top: 4px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-danger-solid {
+  background: var(--danger);
+  color: #2a120c;
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.modal-detail-list {
+  display: grid;
+  gap: 8px;
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+
+.modal-detail-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.modal-detail-list dt,
+.modal-detail-list span:first-child {
+  color: var(--text-faint);
+}
+
+/* ---------- sub-tabs (pending / history) ---------- */
+
+.admin-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.admin-subtab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-subtab:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.admin-subtab.active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #1a1408;
+}
+
+.admin-subtab-count {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
+/* ---------- sort / filter bar ---------- */
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.admin-toolbar select,
+.admin-toolbar input[type='search'] {
+  width: auto;
+  min-width: 150px;
+  padding: 9px 12px;
+  font-size: 0.86rem;
+}
+
+.admin-toolbar input[type='search'] {
+  min-width: 200px;
+  flex: 1;
+}
+
+.admin-toolbar-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+/* ---------- bookings: date head / controls ---------- */
+
+.admin-bookings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-section-title-tight {
+  margin-bottom: 4px;
+}
+
+.admin-bookings-date {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  color: var(--gold-bright);
+}
+
+.admin-date-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-date-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  color: var(--gold);
+  background: var(--ink-soft);
+  cursor: pointer;
+}
+
+.admin-date-input input[type='date'] {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  width: auto;
+  cursor: pointer;
+}
+
+.admin-refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-request-actions-wrap {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.admin-noshow-hint {
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* ---------- menu admin panel ---------- */
+
+.admin-menu-current,
+.admin-menu-upload,
+.admin-menu-history {
+  margin-bottom: 20px;
+}
+
+.admin-menu-current h3,
+.admin-menu-upload h3,
+.admin-menu-history h3 {
+  font-size: 1.1rem;
+  margin-bottom: 14px;
+}
+
+.admin-menu-current-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
+
+.admin-menu-current-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+.admin-menu-file-btn {
+  display: inline-flex;
+  cursor: pointer;
+  position: relative;
+}
+
+.admin-menu-file-error {
+  color: var(--danger);
+  font-size: 0.86rem;
+  margin-top: 10px;
+}
+
+.admin-menu-file-preview {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.admin-menu-file-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+.admin-menu-history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-menu-history-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.admin-menu-history-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}

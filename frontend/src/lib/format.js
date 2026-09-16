@@ -98,6 +98,33 @@ export function formatDateKeyLong(dateKey) {
   })
 }
 
+export function formatDateKeyFull(dateKey) {
+  if (!dateKey) return ''
+
+  const [year, month, day] = dateKey.split('-').map(Number)
+
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-AU', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+// Pure date-key arithmetic (no timezone involved — dateKey is already a
+// plain Sydney-local 'YYYY-MM-DD', so this just walks the calendar).
+export function addDaysToDateKey(dateKey, days) {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const next = new Date(Date.UTC(year, month - 1, day + days))
+
+  return [
+    next.getUTCFullYear(),
+    String(next.getUTCMonth() + 1).padStart(2, '0'),
+    String(next.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+}
+
 export function formatCurrency(value) {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
@@ -113,6 +140,7 @@ const STATUS_LABELS = {
   cancelled: 'Cancelled',
   completed: 'Completed',
   no_show: 'No-show',
+  seated: 'Seated',
   acknowledged: 'Acknowledged',
   in_review: 'In Review',
   contacted: 'Contacted',
@@ -128,6 +156,7 @@ const STATUS_TONES = {
   cancelled: 'danger',
   completed: 'neutral',
   no_show: 'neutral',
+  seated: 'success',
   acknowledged: 'info',
   in_review: 'warning',
   contacted: 'info',
