@@ -1593,9 +1593,13 @@ app.get(
 // dashboard. Anything not listed here (e.g. leaving 'cancelled' or
 // 'no_show') is a dead end -- enforced here, not just by hiding buttons in
 // the UI, since the frontend hiding a control is not a security boundary.
+// 'seated' -> 'confirmed' and 'completed' -> 'seated' are the staff-facing
+// "Undo" actions -- deliberately one step back only, not a general reopen
+// (cancelled/no_show/completed -> confirmed stay unreachable here).
 const ADMIN_BOOKING_TRANSITIONS = {
   confirmed: ['seated', 'no_show', 'cancelled'],
-  seated: ['completed']
+  seated: ['completed', 'confirmed'],
+  completed: ['seated']
 };
 
 app.patch(
@@ -1605,7 +1609,7 @@ app.patch(
     const { bookingReference } = req.params;
     const { status: nextStatus, reason } = req.body;
 
-    const validTargets = ['seated', 'completed', 'no_show', 'cancelled'];
+    const validTargets = ['confirmed', 'seated', 'completed', 'no_show', 'cancelled'];
 
     if (!validTargets.includes(nextStatus)) {
       return res.status(400).json({
@@ -1698,9 +1702,23 @@ app.patch(
         );
       }
 
-      if (nextStatus === 'seated') {
+      if (nextStatus === 'seated' && booking.status === 'completed') {
+        // Undo Completed: the party is seated again, so seated_at (when they
+        // were first seated) is preserved -- only completed_at clears.
+        await client.query(
+          `UPDATE bookings SET status = 'seated', completed_at = NULL, updated_at = NOW() WHERE id = $1`,
+          [booking.id]
+        );
+      } else if (nextStatus === 'seated') {
         await client.query(
           `UPDATE bookings SET status = 'seated', seated_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [booking.id]
+        );
+      } else if (nextStatus === 'confirmed') {
+        // Undo Seated: the reservation itself never stopped existing, so
+        // this just clears seated_at rather than touching booking_slots.
+        await client.query(
+          `UPDATE bookings SET status = 'confirmed', seated_at = NULL, updated_at = NOW() WHERE id = $1`,
           [booking.id]
         );
       } else if (nextStatus === 'completed') {

@@ -61,6 +61,15 @@ function noShowEligibleAt(startsAt) {
   return new Date(new Date(startsAt).getTime() + 30 * 60 * 1000)
 }
 
+// UI-level action tags for the confirm dialog map onto the actual target
+// status the backend expects -- kept distinct from the status string itself
+// so the dialog-selection logic below doesn't have to guess intent from the
+// booking's current status.
+const UNDO_TARGET_STATUS = {
+  undo_seated: 'confirmed',
+  undo_completed: 'seated',
+}
+
 function CalendarIcon() {
   return (
     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
@@ -162,7 +171,8 @@ function BookingsPanel() {
   const closeConfirm = () => setConfirmTarget(null)
 
   const handleConfirmedAction = async (reason) => {
-    await runStatusUpdate(confirmTarget.booking, confirmTarget.action, reason)
+    const status = UNDO_TARGET_STATUS[confirmTarget.action] || confirmTarget.action
+    await runStatusUpdate(confirmTarget.booking, status, reason)
     setConfirmTarget(null)
   }
 
@@ -355,7 +365,7 @@ function BookingsPanel() {
                     )}
 
                     {booking.status === 'seated' && (
-                      <div className="admin-request-actions">
+                      <div className="admin-request-actions admin-request-actions-wrap">
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
@@ -363,6 +373,27 @@ function BookingsPanel() {
                           onClick={() => handleInstantAction(booking, 'completed')}
                         >
                           {isBusy ? 'Working…' : 'Mark Completed'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={isBusy}
+                          onClick={() => setConfirmTarget({ booking, action: 'undo_seated' })}
+                        >
+                          Undo Seated
+                        </button>
+                      </div>
+                    )}
+
+                    {booking.status === 'completed' && (
+                      <div className="admin-request-actions">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={isBusy}
+                          onClick={() => setConfirmTarget({ booking, action: 'undo_completed' })}
+                        >
+                          Undo Completed
                         </button>
                       </div>
                     )}
@@ -411,6 +442,66 @@ function BookingsPanel() {
           reasonPlaceholder="e.g. Requested by the customer over the phone"
           confirmLabel="Confirm Cancellation"
           danger
+          onConfirm={handleConfirmedAction}
+          onClose={closeConfirm}
+        >
+          <dl className="modal-detail-list">
+            <div>
+              <span>Customer</span>
+              <span>{confirmTarget.booking.customer_name}</span>
+            </div>
+            <div>
+              <span>Time</span>
+              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+            </div>
+            <div>
+              <span>Party</span>
+              <span>{confirmTarget.booking.party_size} guests</span>
+            </div>
+            <div>
+              <span>Reference</span>
+              <span>{confirmTarget.booking.booking_reference}</span>
+            </div>
+          </dl>
+        </ConfirmDialog>
+      )}
+
+      {confirmTarget && confirmTarget.action === 'undo_seated' && (
+        <ConfirmDialog
+          title="Undo seated status?"
+          description="This will return the booking to Confirmed and update the live guest counts."
+          confirmLabel="Undo Seated"
+          cancelLabel="Keep Seated"
+          onConfirm={handleConfirmedAction}
+          onClose={closeConfirm}
+        >
+          <dl className="modal-detail-list">
+            <div>
+              <span>Customer</span>
+              <span>{confirmTarget.booking.customer_name}</span>
+            </div>
+            <div>
+              <span>Time</span>
+              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+            </div>
+            <div>
+              <span>Party</span>
+              <span>{confirmTarget.booking.party_size} guests</span>
+            </div>
+            <div>
+              <span>Reference</span>
+              <span>{confirmTarget.booking.booking_reference}</span>
+            </div>
+          </dl>
+        </ConfirmDialog>
+      )}
+
+      {confirmTarget && confirmTarget.action === 'undo_completed' && (
+        <ConfirmDialog
+          title="Undo completed status?"
+          description="This will return the booking to Seated."
+          confirmLabel="Undo Completed"
+          cancelLabel="Keep Completed"
           onConfirm={handleConfirmedAction}
           onClose={closeConfirm}
         >
