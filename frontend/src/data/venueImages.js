@@ -17,6 +17,8 @@ import mainBarFrontWebp from '../assets/venue/bar185-main-bar-front.webp'
 import mainBarFrontPng from '../assets/venue/bar185-main-bar-front.png'
 import upstairsEventSpaceWebp from '../assets/venue/bar185-upstairs-event-space.webp'
 import upstairsEventSpacePng from '../assets/venue/bar185-upstairs-event-space.png'
+import audioMixingConsoleWebp from '../assets/venue/bar185-audio-mixing-console.webp'
+import audioMixingConsolePng from '../assets/venue/bar185-audio-mixing-console.png'
 
 export const venueImages = {
   exteriorSign: {
@@ -67,5 +69,12 @@ export const venueImages = {
     alt: 'Upstairs event space at Bar 185',
     width: 928,
     height: 1220,
+  },
+  audioMixingConsole: {
+    webp: audioMixingConsoleWebp,
+    png: audioMixingConsolePng,
+    alt: 'Audio mixing console set up for a live event at Bar 185',
+    width: 900,
+    height: 1200,
   },
 }

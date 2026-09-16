@@ -110,8 +110,9 @@ function Events() {
         <div className="container enquiry-grid">
           <div className="enquiry-intro">
             <VenueImage
-              image={venueImages.upstairsEventSpace}
+              image={venueImages.audioMixingConsole}
               className="enquiry-photo"
+              objectPosition="50% 45%"
             />
             <SectionHead eyebrow="Get in Touch" title="Enquire About Your Event">
               Tell us what you're planning and our events team will follow up with
