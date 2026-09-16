@@ -1,11 +1,23 @@
+import { useEffect, useState } from 'react'
 import SectionHead from '../components/SectionHead'
 import EventEnquiryForm from '../components/EventEnquiryForm'
 import VenueImage from '../components/VenueImage'
 import { venueImages } from '../data/venueImages'
-import { upcomingEvents } from '../data/events'
+import { LoadingState, EmptyState, Alert } from '../components/Feedback'
+import api from '../lib/api'
 import { formatDateTime } from '../lib/format'
 
 function Events() {
+  const [events, setEvents] = useState(undefined) // undefined = loading
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api
+      .getEvents()
+      .then((data) => setEvents(data.events))
+      .catch(() => setError('Could not load events right now. Please try again shortly.'))
+  }, [])
+
   return (
     <>
       <section className="hero events-hero">
@@ -71,16 +83,26 @@ function Events() {
             Regular nights on the calendar — no booking required unless noted.
           </SectionHead>
 
-          <div className="grid grid-3">
-            {upcomingEvents.map((event) => (
-              <div className="card event-preview-card" key={event.id}>
-                <span className="badge badge-info">{event.tag}</span>
-                <h3>{event.title}</h3>
-                <p>{event.tagline}</p>
-                <span className="event-date">{formatDateTime(event.startsAt)}</span>
-              </div>
-            ))}
-          </div>
+          {error && <Alert type="error">{error}</Alert>}
+
+          {events === undefined && !error && <LoadingState label="Loading events…" />}
+
+          {events && events.length === 0 && !error && (
+            <EmptyState label="No upcoming events right now — check back soon." />
+          )}
+
+          {events && events.length > 0 && (
+            <div className="grid grid-3">
+              {events.map((event) => (
+                <div className="card event-preview-card" key={event.eventReference}>
+                  <span className="badge badge-info">{event.tag || 'Event'}</span>
+                  <h3>{event.title}</h3>
+                  {event.description && <p>{event.description}</p>}
+                  <span className="event-date">{formatDateTime(event.startsAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

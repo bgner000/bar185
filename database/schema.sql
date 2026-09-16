@@ -782,3 +782,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_menu_documents_active_per_venue
   WHERE is_active = TRUE;
 
 ALTER TABLE menu_documents ENABLE ROW LEVEL SECURITY;
+
+
+-- =========================================================
+-- 12. MIGRATION: PUBLIC EVENTS LISTING SUPPORT
+-- =========================================================
+-- The events table already carried everything the public "Upcoming
+-- Events" listing needs -- starts_at/ends_at/status -- except a short
+-- category label for the badge the public card design already shows
+-- (previously hardcoded per-event in frontend sample data, e.g. "Live
+-- Music", "Trivia"). That's the only field that didn't already exist;
+-- it's nullable so existing rows, and staff who skip it, are unaffected.
+-- The index supports the public listing's status + not-yet-finished
+-- filter and the admin panel's upcoming/history split.
+
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS tag VARCHAR(60);
+
+CREATE INDEX IF NOT EXISTS idx_events_status_starts_at
+  ON events(status, starts_at);

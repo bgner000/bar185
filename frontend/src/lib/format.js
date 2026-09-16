@@ -146,6 +146,9 @@ const STATUS_LABELS = {
   contacted: 'Contacted',
   quoted: 'Quoted',
   closed: 'Closed',
+  draft: 'Draft',
+  published: 'Published',
+  archived: 'Archived',
 }
 
 const STATUS_TONES = {
@@ -162,6 +165,9 @@ const STATUS_TONES = {
   contacted: 'info',
   quoted: 'success',
   closed: 'neutral',
+  draft: 'neutral',
+  published: 'success',
+  archived: 'neutral',
 }
 
 export function statusLabel(status) {

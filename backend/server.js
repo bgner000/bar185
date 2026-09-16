@@ -1947,6 +1947,365 @@ app.post(
   }
 );
 
+// Events Bar 185 publishes publicly (live music nights, tastings, trivia --
+// not to be confused with event_enquiries, which are customer private-event
+// requests). starts_at/ends_at are TIMESTAMPTZ, so comparing them against
+// NOW() below is an absolute-instant comparison and is correct regardless
+// of server timezone -- no Sydney-specific conversion is needed to decide
+// whether an event has finished, only to display it, which the frontend
+// already does in Australia/Sydney time via formatDateTime.
+function slugifyEventTitle(title) {
+  const base = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 160);
+
+  return base || 'event';
+}
+
+function parseEventTimes(body, res) {
+  const { startsAt, endsAt } = body;
+
+  const startsAtDate = new Date(startsAt);
+
+  if (!startsAt || Number.isNaN(startsAtDate.getTime())) {
+    res.status(400).json({
+      status: 'failed',
+      message: 'A valid start date/time is required'
+    });
+    return null;
+  }
+
+  let endsAtDate = null;
+
+  if (endsAt) {
+    endsAtDate = new Date(endsAt);
+
+    if (Number.isNaN(endsAtDate.getTime())) {
+      res.status(400).json({
+        status: 'failed',
+        message: 'End date/time is invalid'
+      });
+      return null;
+    }
+
+    if (endsAtDate <= startsAtDate) {
+      res.status(400).json({
+        status: 'failed',
+        message: 'End date/time must be after the start date/time'
+      });
+      return null;
+    }
+  }
+
+  return { startsAtDate, endsAtDate };
+}
+
+app.get('/api/v1/events', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        event_reference,
+        title,
+        slug,
+        description,
+        tag,
+        starts_at,
+        ends_at
+      FROM events
+      WHERE status = 'published'
+        AND COALESCE(ends_at, starts_at) > NOW()
+      ORDER BY starts_at ASC
+    `);
+
+    return res.status(200).json({
+      status: 'ok',
+      events: result.rows.map((row) => ({
+        eventReference: row.event_reference,
+        title: row.title,
+        slug: row.slug,
+        description: row.description,
+        tag: row.tag,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at
+      }))
+    });
+  } catch (error) {
+    console.error('Get public events error:', error.message);
+
+    return res.status(500).json({
+      status: 'failed',
+      message: 'Could not load events'
+    });
+  }
+});
+
+app.get(
+  '/api/v1/admin/events',
+  requireApprovedAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          e.id,
+          e.event_reference,
+          e.title,
+          e.slug,
+          e.description,
+          e.tag,
+          e.starts_at,
+          e.ends_at,
+          e.status,
+          e.created_at,
+          e.updated_at,
+          u.display_name AS created_by_name
+        FROM events e
+        LEFT JOIN users u
+          ON u.id = e.created_by_user_id
+        ORDER BY e.starts_at DESC
+      `);
+
+      return res.status(200).json({
+        status: 'ok',
+        events: result.rows
+      });
+    } catch (error) {
+      console.error('Admin events list error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not load events'
+      });
+    }
+  }
+);
+
+app.post(
+  '/api/v1/admin/events',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { title, description, tag } = req.body;
+
+    if (typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A title is required'
+      });
+    }
+
+    const times = parseEventTimes(req.body, res);
+    if (!times) return;
+
+    const { startsAtDate, endsAtDate } = times;
+
+    try {
+      const eventReference =
+        'B185-EV-' + crypto.randomBytes(5).toString('hex').toUpperCase();
+      const slug = `${slugifyEventTitle(title)}-${crypto.randomBytes(3).toString('hex')}`;
+
+      const result = await pool.query(
+        `
+        INSERT INTO events (
+          event_reference, title, slug, description, tag, starts_at, ends_at, status, created_by_user_id
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'draft', $8)
+        RETURNING
+          id, event_reference, title, slug, description, tag, starts_at, ends_at, status, created_at, updated_at
+        `,
+        [
+          eventReference,
+          title.trim(),
+          slug,
+          typeof description === 'string' && description.trim() ? description.trim() : null,
+          typeof tag === 'string' && tag.trim() ? tag.trim() : null,
+          startsAtDate.toISOString(),
+          endsAtDate ? endsAtDate.toISOString() : null,
+          req.adminUser.id
+        ]
+      );
+
+      return res.status(201).json({
+        status: 'ok',
+        message: 'Event created as a draft',
+        event: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Create event error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not create event'
+      });
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/admin/events/:eventReference',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { eventReference } = req.params;
+    const { title, description, tag } = req.body;
+
+    if (typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A title is required'
+      });
+    }
+
+    const times = parseEventTimes(req.body, res);
+    if (!times) return;
+
+    const { startsAtDate, endsAtDate } = times;
+
+    try {
+      const result = await pool.query(
+        `
+        UPDATE events
+        SET
+          title = $1,
+          description = $2,
+          tag = $3,
+          starts_at = $4,
+          ends_at = $5,
+          updated_at = NOW()
+        WHERE event_reference = $6
+        RETURNING
+          id, event_reference, title, slug, description, tag, starts_at, ends_at, status, created_at, updated_at
+        `,
+        [
+          title.trim(),
+          typeof description === 'string' && description.trim() ? description.trim() : null,
+          typeof tag === 'string' && tag.trim() ? tag.trim() : null,
+          startsAtDate.toISOString(),
+          endsAtDate ? endsAtDate.toISOString() : null,
+          eventReference.trim()
+        ]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Event not found'
+        });
+      }
+
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Event updated',
+        event: result.rows[0]
+      });
+    } catch (error) {
+      console.error('Update event error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not update event'
+      });
+    }
+  }
+);
+
+// Staff-facing publish/unpublish/cancel/archive actions. 'archived' is a
+// deliberate dead end (like bookings' 'cancelled'/'no_show') -- it's the
+// non-destructive way to bury an old event from every admin view without
+// ever deleting the row, not a state anything comes back from.
+const ADMIN_EVENT_TRANSITIONS = {
+  draft: ['published', 'cancelled', 'archived'],
+  published: ['draft', 'cancelled', 'completed', 'archived'],
+  cancelled: ['archived'],
+  completed: ['archived'],
+  archived: []
+};
+
+app.patch(
+  '/api/v1/admin/events/:eventReference/status',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { eventReference } = req.params;
+    const { status: nextStatus } = req.body;
+
+    const validTargets = ['draft', 'published', 'cancelled', 'completed', 'archived'];
+
+    if (!validTargets.includes(nextStatus)) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'Invalid target status'
+      });
+    }
+
+    let client;
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const eventResult = await client.query(
+        `SELECT id, event_reference, status FROM events WHERE event_reference = $1 FOR UPDATE`,
+        [eventReference.trim()]
+      );
+
+      if (eventResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Event not found'
+        });
+      }
+
+      const event = eventResult.rows[0];
+      const allowedNext = ADMIN_EVENT_TRANSITIONS[event.status] || [];
+
+      if (!allowedNext.includes(nextStatus)) {
+        await client.query('ROLLBACK');
+
+        return res.status(409).json({
+          status: 'failed',
+          message: `Event cannot move from ${event.status} to ${nextStatus}`
+        });
+      }
+
+      const result = await client.query(
+        `
+        UPDATE events
+        SET status = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING
+          id, event_reference, title, slug, description, tag, starts_at, ends_at, status, created_at, updated_at
+        `,
+        [nextStatus, event.id]
+      );
+
+      await client.query('COMMIT');
+
+      return res.status(200).json({
+        status: 'ok',
+        message: `Event updated to ${nextStatus}`,
+        event: result.rows[0]
+      });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Update event status error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not update event status'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
 // Multer's fileFilter/size-limit errors reach us via Express's error-handling
 // middleware (four-argument signature), not the normal request pipeline --
 // without this, they'd fall through to Express's default HTML error page

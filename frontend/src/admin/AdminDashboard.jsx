@@ -6,6 +6,7 @@ import DashboardSummary from './DashboardSummary'
 import BookingsPanel from './BookingsPanel'
 import LargeGroupPanel from './LargeGroupPanel'
 import EnquiriesPanel from './EnquiriesPanel'
+import EventsPanel from './EventsPanel'
 import MenuPanel from './MenuPanel'
 import './admin.css'
 
@@ -98,6 +99,7 @@ function AdminDashboard() {
     bookings: 0,
     'large-group': largeGroupRequests.filter((r) => r.status === 'pending').length,
     enquiries: eventEnquiries.filter((e) => !['closed', 'declined'].includes(e.status)).length,
+    events: 0,
     menu: 0,
   }
 
@@ -160,6 +162,8 @@ function AdminDashboard() {
               />
             </>
           )}
+
+          {activeSection === 'events' && <EventsPanel />}
 
           {activeSection === 'menu' && <MenuPanel />}
         </div>
