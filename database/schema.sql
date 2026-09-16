@@ -843,3 +843,80 @@ CREATE INDEX IF NOT EXISTS idx_verification_requests_ip
   ON verification_requests(ip_address, created_at DESC);
 
 ALTER TABLE verification_requests ENABLE ROW LEVEL SECURITY;
+
+
+-- =========================================================
+-- 14. MIGRATION: BOOKING SECURITY METHOD (EMAIL VERIFICATION OR DEPOSIT)
+-- =========================================================
+-- A standard booking is now secured one of two ways: the existing free
+-- email OTP verification, or a refundable A$10 deposit. These columns
+-- are additive to bookings -- capacity, booking_slots, and the existing
+-- email-verification path are untouched. No payment provider is wired
+-- up yet (see backend/payments/), so deposit_status can't currently
+-- reach 'paid' in production; the column exists now so the schema
+-- doesn't need to change again when a real provider is added.
+--
+-- deposit_status:
+--   not_required -- default; the booking was secured by email verification
+--   pending      -- a charge attempt was started but hasn't resolved yet
+--   paid         -- the A$10 deposit was actually captured by a provider
+--   refunded     -- an actual refund was processed (not automatic --
+--                   see backend/bookings/cancellationPolicy.js; a paid
+--                   deposit cancelled >=12h before the booking is left
+--                   as 'paid' and shown as refund-eligible until a real
+--                   refund is issued, so this value is never set as a
+--                   side effect of cancelling)
+--   retained     -- set automatically: cancelled <12h before start, or
+--                   marked no-show -- no payment action required to
+--                   "retain" money already held, so this is safe to set
+--                   without a payment provider
+
+-- Postgres has no CREATE TYPE IF NOT EXISTS, so these are wrapped to stay
+-- safe to re-run like the rest of this migration.
+DO $$
+BEGIN
+  CREATE TYPE booking_security_method AS ENUM (
+    'email_verification',
+    'deposit'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE deposit_status AS ENUM (
+    'not_required',
+    'pending',
+    'paid',
+    'refunded',
+    'retained'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS booking_security_method booking_security_method NOT NULL DEFAULT 'email_verification',
+  ADD COLUMN IF NOT EXISTS deposit_amount_cents INT,
+  ADD COLUMN IF NOT EXISTS deposit_status deposit_status NOT NULL DEFAULT 'not_required',
+  ADD COLUMN IF NOT EXISTS payment_provider_reference VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
+
+-- Postgres has no ADD CONSTRAINT IF NOT EXISTS, so this is wrapped to stay
+-- safe to re-run like the ADD COLUMN statements above it.
+DO $$
+BEGIN
+  ALTER TABLE bookings
+    ADD CONSTRAINT chk_bookings_deposit_amount_positive
+      CHECK (deposit_amount_cents IS NULL OR deposit_amount_cents > 0);
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Selective: most bookings are deposit_status = 'not_required' and never
+-- need to be found this way, so only deposit-relevant rows are indexed.
+CREATE INDEX IF NOT EXISTS idx_bookings_deposit_status
+  ON bookings(deposit_status)
+  WHERE deposit_status <> 'not_required';

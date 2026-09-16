@@ -61,6 +61,29 @@ function noShowEligibleAt(startsAt) {
   return new Date(new Date(startsAt).getTime() + 30 * 60 * 1000)
 }
 
+// deposit_refund_eligible is computed server-side (see GET /api/v1/admin/
+// bookings) from the same 12-hour rule used to decide whether cancelling
+// actually retains the deposit -- kept in one place so this label can never
+// disagree with what the backend already decided.
+function depositBadge(booking) {
+  switch (booking.deposit_status) {
+    case 'not_required':
+      return { text: 'No deposit', tone: 'neutral' }
+    case 'paid':
+      return booking.deposit_refund_eligible
+        ? { text: 'Refund eligible', tone: 'info' }
+        : { text: 'A$10 Paid', tone: 'success' }
+    case 'refunded':
+      return { text: 'Refunded', tone: 'neutral' }
+    case 'retained':
+      return { text: 'Retained', tone: 'danger' }
+    case 'pending':
+      return { text: 'Deposit pending', tone: 'warning' }
+    default:
+      return { text: 'No deposit', tone: 'neutral' }
+  }
+}
+
 // UI-level action tags for the confirm dialog map onto the actual target
 // status the backend expects -- kept distinct from the status string itself
 // so the dialog-selection logic below doesn't have to guess intent from the
@@ -310,6 +333,12 @@ function BookingsPanel() {
                       <div>
                         <span className="admin-detail-label">Phone</span>
                         <span>{booking.customer_phone || 'Not provided'}</span>
+                      </div>
+                      <div>
+                        <span className="admin-detail-label">Deposit</span>
+                        <span className={`badge badge-${depositBadge(booking).tone}`}>
+                          {depositBadge(booking).text}
+                        </span>
                       </div>
                     </div>
 
