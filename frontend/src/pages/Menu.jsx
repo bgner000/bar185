@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import SectionHead from '../components/SectionHead'
 import PdfViewer from '../components/PdfViewer'
+import VenueImage from '../components/VenueImage'
 import { LoadingState, EmptyState, Alert } from '../components/Feedback'
 import api, { API_ORIGIN } from '../lib/api'
+import { venueImages } from '../data/venueImages'
 
 function Menu() {
   const [menu, setMenu] = useState(undefined) // undefined = loading, null = none published
@@ -19,41 +21,50 @@ function Menu() {
   const isImage = menu?.mimeType?.startsWith('image/')
 
   return (
-    <section className="section">
-      <div className="container narrow">
-        <SectionHead eyebrow="Menu" title="Our Menu" center>
-          Cocktails, wine, beer, and small plates — updated by our team as the season changes.
-        </SectionHead>
+    <>
+      <VenueImage
+        image={venueImages.mainBarFront}
+        className="menu-banner-photo"
+        objectPosition="50% 35%"
+        loading="eager"
+      />
 
-        {error && <Alert type="error">{error}</Alert>}
+      <section className="section">
+        <div className="container narrow">
+          <SectionHead eyebrow="Menu" title="Our Menu" center>
+            Cocktails, wine, beer, and small plates — updated by our team as the season changes.
+          </SectionHead>
 
-        {menu === undefined && !error && <LoadingState label="Loading menu…" />}
+          {error && <Alert type="error">{error}</Alert>}
 
-        {menu === null && !error && (
-          <EmptyState label="Our menu will be published here shortly — please check back soon." />
-        )}
+          {menu === undefined && !error && <LoadingState label="Loading menu…" />}
 
-        {menu && (
-          <div className="menu-viewer-wrap">
-            {isImage ? (
-              <div className="pdf-viewer">
-                <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
-                <div className="pdf-viewer-links">
-                  <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
-                    Open Full Size
-                  </a>
-                  <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
-                    Download
-                  </a>
+          {menu === null && !error && (
+            <EmptyState label="Our menu will be published here shortly — please check back soon." />
+          )}
+
+          {menu && (
+            <div className="menu-viewer-wrap">
+              {isImage ? (
+                <div className="pdf-viewer">
+                  <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
+                  <div className="pdf-viewer-links">
+                    <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
+                      Open Full Size
+                    </a>
+                    <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
+                      Download
+                    </a>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <PdfViewer url={menuUrl} fileName={menu.fileName} />
-            )}
-          </div>
-        )}
-      </div>
-    </section>
+              ) : (
+                <PdfViewer url={menuUrl} fileName={menu.fileName} />
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </>
   )
 }
 

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHead from '../components/SectionHead'
+import VenueImage from '../components/VenueImage'
 import { LoadingState } from '../components/Feedback'
 import api from '../lib/api'
+import { venueImages } from '../data/venueImages'
 import { formatHourLabel, weekdayName } from '../lib/format'
 
 // Monday-first display order, mapping onto the day_of_week values
@@ -32,6 +34,12 @@ function Contact() {
             Details below are indicative for this demo and easy to update once the venue goes
             live.
           </SectionHead>
+
+          <VenueImage
+            image={venueImages.exteriorSign}
+            className="contact-photo"
+            objectPosition="50% 22%"
+          />
 
           <div className="card contact-card">
             <h3>Visit</h3>

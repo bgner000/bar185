@@ -1,26 +1,32 @@
 import { Link } from 'react-router-dom'
 import SectionHead from '../components/SectionHead'
+import VenueImage from '../components/VenueImage'
+import { venueImages } from '../data/venueImages'
 
 function About() {
   return (
     <>
       <section className="section section-tight">
-        <div className="container narrow">
-          <SectionHead eyebrow="About Us" title="Bar 185">
-            A neighbourhood bar in Marrickville, built around good drinks, local produce, and
-            unhurried evenings.
-          </SectionHead>
+        <div className="container about-intro-grid">
+          <VenueImage image={venueImages.exteriorSign} className="about-sign-photo" loading="eager" />
 
-          <p>
-            Bar 185 opened with a simple idea: a bar the Inner West could make its own. We
-            keep the drinks list tight and considered, lean on producers from around NSW, and
-            treat the small plates menu with the same care as the cocktails.
-          </p>
-          <p>
-            Whether you're in for a quick glass of wine after work or settling in for a long
-            night with friends, the room is built to feel the same — warm, a little dim, and
-            never rushed.
-          </p>
+          <div>
+            <SectionHead eyebrow="About Us" title="Bar 185">
+              A neighbourhood bar in Marrickville, built around good drinks, local produce, and
+              unhurried evenings.
+            </SectionHead>
+
+            <p>
+              Bar 185 opened with a simple idea: a bar the Inner West could make its own. We
+              keep the drinks list tight and considered, lean on producers from around NSW, and
+              treat the small plates menu with the same care as the cocktails.
+            </p>
+            <p>
+              Whether you're in for a quick glass of wine after work or settling in for a long
+              night with friends, the room is built to feel the same — warm, a little dim, and
+              never rushed.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -45,6 +51,10 @@ function About() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="section-tight">
+        <VenueImage image={venueImages.mainBarFront} className="about-banner-photo" />
       </section>
 
       <section className="section cta-band">
