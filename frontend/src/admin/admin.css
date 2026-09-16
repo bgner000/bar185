@@ -1,0 +1,243 @@
+.admin-shell {
+  min-height: 100svh;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+.admin-shell-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.admin-header h1 {
+  font-family: var(--serif);
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.admin-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 4px;
+}
+
+.admin-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.container-full {
+  padding: 16px 32px 0;
+}
+
+.admin-body {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100svh - 77px);
+}
+
+@media (max-width: 780px) {
+  .admin-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-nav {
+  border-right: 1px solid var(--border);
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (max-width: 780px) {
+  .admin-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+  }
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.admin-nav-item:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.admin-nav-item.active {
+  background: var(--gold-dim);
+  color: var(--gold-bright);
+}
+
+.admin-nav-count {
+  background: var(--gold);
+  color: #1a1408;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.admin-content {
+  padding: 32px;
+}
+
+.admin-section-title {
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  margin-bottom: 24px;
+}
+
+.admin-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-summary-value {
+  font-family: var(--serif);
+  font-size: 2.6rem;
+  color: var(--gold-bright);
+}
+
+.admin-summary-label {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+/* ---------- table ---------- */
+
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.admin-table th {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--surface);
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------- request / enquiry cards ---------- */
+
+.admin-card-list {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-request-card {
+  padding: 22px;
+}
+
+.admin-request-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-request-head h3 {
+  font-size: 1.15rem;
+  margin-bottom: 2px;
+}
+
+.admin-request-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.admin-request-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-detail-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.admin-request-message {
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.admin-request-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-status-field {
+  margin-bottom: 0;
+  max-width: 280px;
+}
