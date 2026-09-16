@@ -269,3 +269,49 @@ ON CONFLICT (venue_id, table_code) DO UPDATE SET
   updated_at = NOW();
 
 COMMIT;
+
+-- =========================================================
+-- 7. ROLLING DEMO BOOKING SLOTS
+-- =========================================================
+-- The dated slots in section 3 become stale once their date passes.
+-- This generates two open slots per day (6-8pm, 8-10pm Sydney time) for
+-- the next 14 days, so there is always bookable availability for local
+-- development, testing and demos. Safe to re-run.
+--
+-- Times are anchored to Australia/Sydney wall-clock time (converting via
+-- "AT TIME ZONE" twice) rather than NOW() directly, because the database
+-- session's own timezone is UTC — using NOW() directly would store slots
+-- offset by several hours from the intended 6pm/8pm local times.
+
+BEGIN;
+
+INSERT INTO booking_slots (
+  venue_id,
+  starts_at,
+  ends_at,
+  total_capacity,
+  reserved_capacity,
+  version_number,
+  is_open
+)
+SELECT
+  v.id,
+  (local_slot AT TIME ZONE 'Australia/Sydney'),
+  (local_slot AT TIME ZONE 'Australia/Sydney') + INTERVAL '2 hours',
+  40,
+  0,
+  1,
+  TRUE
+FROM venues v
+CROSS JOIN LATERAL (
+  SELECT generate_series(
+    date_trunc('day', NOW() AT TIME ZONE 'Australia/Sydney') + INTERVAL '1 day' + INTERVAL '18 hours',
+    date_trunc('day', NOW() AT TIME ZONE 'Australia/Sydney') + INTERVAL '14 days' + INTERVAL '20 hours',
+    INTERVAL '2 hours'
+  ) AS local_slot
+) s
+WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
+  AND EXTRACT(HOUR FROM local_slot) IN (18, 20)
+ON CONFLICT (venue_id, starts_at, ends_at) DO NOTHING;
+
+COMMIT;
