@@ -279,7 +279,13 @@ async function verifyCode({ verificationId, code }) {
 // Throws VerificationError on any failure; never reveals which specific
 // check failed to the caller, since none of that is useful to a genuine
 // customer and all of it is useful to someone probing the endpoint.
-async function consumeVerification(client, { verificationId, customerEmail, customerPhone }) {
+//
+// requiredChannel is optional: standard bookings secured by
+// booking_security_method = 'email_verification' pass 'email' so a phone
+// (SMS) proof can't be substituted for it, even though the underlying OTP
+// endpoints still support both channels generically. Large-group requests
+// don't pass it, since either channel has always been accepted there.
+async function consumeVerification(client, { verificationId, customerEmail, customerPhone, requiredChannel }) {
   if (typeof verificationId !== 'string' || !verificationId.trim()) {
     throw new VerificationError();
   }
@@ -301,6 +307,10 @@ async function consumeVerification(client, { verificationId, customerEmail, cust
   const record = result.rows[0];
 
   if (!record.verified_at || record.consumed_at || new Date(record.expires_at) < new Date()) {
+    throw new VerificationError();
+  }
+
+  if (requiredChannel && record.channel !== requiredChannel) {
     throw new VerificationError();
   }
 

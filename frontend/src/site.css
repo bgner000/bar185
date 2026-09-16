@@ -709,6 +709,55 @@
   flex-wrap: wrap;
 }
 
+.security-method-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 10px 0 16px;
+}
+
+@media (max-width: 640px) {
+  .security-method-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.security-method-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.security-method-option:hover {
+  border-color: var(--border-strong);
+}
+
+.security-method-option.selected {
+  border-color: var(--gold);
+  background: var(--surface-raised);
+}
+
+.security-method-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.security-method-description {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 .manage-booking h3 {
   margin-bottom: 4px;
 }

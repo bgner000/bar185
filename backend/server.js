@@ -5,6 +5,9 @@ const multer = require('multer');
 const pool = require('./db');
 const notifications = require('./notifications');
 const verification = require('./verification');
+const payments = require('./payments');
+const { isRefundEligible } = require('./bookings/cancellationPolicy');
+const { normalizeAuMobile } = require('./notifications/phone');
 const { saveMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
 
 const app = express();
@@ -212,11 +215,16 @@ app.post('/api/v1/bookings', async (req, res) => {
     customerEmail,
     customerPhone,
     specialRequests,
-    verificationId
+    verificationId,
+    bookingSecurityMethod
   } = req.body;
 
   const slotId = Number(bookingSlotId);
   const requestedPartySize = Number(partySize);
+  // Anything other than the literal 'deposit' is treated as the existing
+  // free email-verification path, so older clients that don't send this
+  // field at all keep working exactly as before.
+  const securityMethod = bookingSecurityMethod === 'deposit' ? 'deposit' : 'email_verification';
 
   if (
     !Number.isInteger(slotId) ||
@@ -232,6 +240,19 @@ app.post('/api/v1/bookings', async (req, res) => {
       status: 'failed',
       message: 'Valid booking slot, party size, customer name and email are required'
     });
+  }
+
+  let normalizedDepositPhone = null;
+
+  if (securityMethod === 'deposit') {
+    normalizedDepositPhone = normalizeAuMobile(customerPhone);
+
+    if (!normalizedDepositPhone) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'A valid Australian mobile number is required for the deposit option'
+      });
+    }
   }
 
   let client;
@@ -342,15 +363,40 @@ app.post('/api/v1/bookings', async (req, res) => {
       });
     }
 
-    // Checked (and consumed) only now that every other reason to reject
-    // this request has already passed -- so a request that turns out to
-    // need large-group review, or loses a capacity race, never wastes the
-    // customer's verification on an attempt that was never going to book.
-    await verification.consumeVerification(client, {
-      verificationId,
-      customerEmail: customerEmail.trim(),
-      customerPhone: customerPhone?.trim() || ''
-    });
+    // Checked/charged (and consumed) only now that every other reason to
+    // reject this request has already passed -- so a request that turns
+    // out to need large-group review, or loses a capacity race, never
+    // wastes the customer's verification, and is never charged a deposit
+    // for a booking that was never going to succeed anyway.
+    let depositProviderReference = null;
+
+    if (securityMethod === 'email_verification') {
+      await verification.consumeVerification(client, {
+        verificationId,
+        customerEmail: customerEmail.trim(),
+        customerPhone: customerPhone?.trim() || '',
+        requiredChannel: 'email'
+      });
+    } else {
+      const chargeResult = await payments.chargeDeposit({
+        amountCents: payments.DEPOSIT_AMOUNT_CENTS,
+        currency: payments.DEPOSIT_CURRENCY,
+        bookingReference: null,
+        customerEmail: customerEmail.trim(),
+        customerPhone: normalizedDepositPhone
+      });
+
+      if (!chargeResult.ok) {
+        await client.query('ROLLBACK');
+
+        return res.status(402).json({
+          status: 'failed',
+          message: chargeResult.error
+        });
+      }
+
+      depositProviderReference = chargeResult.providerId || null;
+    }
 
     const bookingReference =
       'B185-' + crypto.randomBytes(5).toString('hex').toUpperCase();
@@ -367,7 +413,12 @@ app.post('/api/v1/bookings', async (req, res) => {
         customer_email,
         customer_phone,
         special_requests,
-        confirmed_at
+        confirmed_at,
+        booking_security_method,
+        deposit_amount_cents,
+        deposit_status,
+        payment_provider_reference,
+        paid_at
       )
       VALUES (
         $1,
@@ -379,7 +430,12 @@ app.post('/api/v1/bookings', async (req, res) => {
         $5,
         $6,
         $7,
-        NOW()
+        NOW(),
+        $8,
+        $9,
+        $10,
+        $11,
+        $12
       )
       RETURNING
         id,
@@ -393,7 +449,10 @@ app.post('/api/v1/bookings', async (req, res) => {
         customer_phone,
         special_requests,
         confirmed_at,
-        created_at
+        created_at,
+        booking_security_method,
+        deposit_amount_cents,
+        deposit_status
       `,
       [
         bookingReference,
@@ -402,7 +461,12 @@ app.post('/api/v1/bookings', async (req, res) => {
         customerName.trim(),
         customerEmail.trim(),
         customerPhone?.trim() || null,
-        specialRequests?.trim() || null
+        specialRequests?.trim() || null,
+        securityMethod,
+        securityMethod === 'deposit' ? payments.DEPOSIT_AMOUNT_CENTS : null,
+        securityMethod === 'deposit' ? 'paid' : 'not_required',
+        depositProviderReference,
+        securityMethod === 'deposit' ? new Date().toISOString() : null
       ]
     );
 
@@ -1023,17 +1087,21 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
     const bookingResult = await client.query(
       `
       SELECT
-        id,
-        booking_reference,
-        booking_slot_id,
-        party_size,
-        customer_name,
-        customer_email,
-        customer_phone,
-        status
-      FROM bookings
-      WHERE booking_reference = $1
-      FOR UPDATE
+        b.id,
+        b.booking_reference,
+        b.booking_slot_id,
+        b.party_size,
+        b.customer_name,
+        b.customer_email,
+        b.customer_phone,
+        b.status,
+        b.deposit_status,
+        bs.starts_at
+      FROM bookings b
+      JOIN booking_slots bs
+        ON bs.id = b.booking_slot_id
+      WHERE b.booking_reference = $1
+      FOR UPDATE OF b
       `,
       [bookingReference.trim()]
     );
@@ -1104,15 +1172,29 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
       [booking.id]
     );
 
+    // A deposit already paid is only ever marked 'retained' here -- never
+    // 'refunded'. Retaining requires no payment action (the money simply
+    // isn't returned), but an actual refund does, and no payment provider
+    // is connected yet (see backend/payments/). A deposit cancelled with
+    // >=12 hours' notice is left as 'paid' and shown to staff as
+    // refund-eligible until a real refund is processed.
+    const depositRetained = booking.deposit_status === 'paid' && !isRefundEligible(booking.starts_at, new Date());
+
+    // cancelled_at wasn't previously set by this customer-facing route
+    // (only the admin cancel path set it) -- now needed so the admin
+    // "Refund eligible" display can tell exactly when this cancellation
+    // happened, same as it already could for admin-initiated cancellations.
     await client.query(
       `
       UPDATE bookings
       SET
         status = 'cancelled',
+        cancelled_at = NOW(),
+        deposit_status = CASE WHEN $2 THEN 'retained'::deposit_status ELSE deposit_status END,
         updated_at = NOW()
       WHERE id = $1
       `,
-      [booking.id]
+      [booking.id, depositRetained]
     );
 
     await client.query('COMMIT');
@@ -1634,6 +1716,12 @@ app.get(
           b.no_show_at,
           b.cancelled_at,
           b.cancel_reason,
+          b.booking_security_method,
+          b.deposit_amount_cents,
+          b.deposit_status,
+          b.payment_provider_reference,
+          b.paid_at,
+          b.refunded_at,
           bs.starts_at,
           bs.ends_at
         FROM bookings b
@@ -1646,10 +1734,24 @@ app.get(
         [serviceDate]
       );
 
+      // A paid deposit cancelled with >=12 hours' notice stays stored as
+      // 'paid' (see the cancel routes) until a real refund is processed --
+      // this derives the "Refund eligible" admin display from that same
+      // rule rather than storing a value that would need to change again
+      // once refunds are real.
+      const bookings = result.rows.map((row) => ({
+        ...row,
+        deposit_refund_eligible:
+          row.status === 'cancelled' &&
+          row.deposit_status === 'paid' &&
+          row.cancelled_at !== null &&
+          isRefundEligible(row.starts_at, row.cancelled_at)
+      }));
+
       return res.status(200).json({
         status: 'ok',
         serviceDate,
-        bookings: result.rows
+        bookings
       });
     } catch (error) {
       console.error('Admin bookings-by-date error:', error.message);
@@ -1707,8 +1809,12 @@ app.patch(
           b.status,
           b.customer_name,
           b.customer_email,
-          b.customer_phone
+          b.customer_phone,
+          b.deposit_status,
+          bs.starts_at
         FROM bookings b
+        JOIN booking_slots bs
+          ON bs.id = b.booking_slot_id
         WHERE b.booking_reference = $1
         FOR UPDATE OF b
         `,
@@ -1737,13 +1843,8 @@ app.patch(
       }
 
       if (nextStatus === 'no_show') {
-        const slotResult = await client.query(
-          `SELECT starts_at FROM booking_slots WHERE id = $1`,
-          [booking.booking_slot_id]
-        );
-
         const eligibleAt = new Date(
-          new Date(slotResult.rows[0].starts_at).getTime() + 30 * 60 * 1000
+          new Date(booking.starts_at).getTime() + 30 * 60 * 1000
         );
 
         if (new Date() < eligibleAt) {
@@ -1800,11 +1901,26 @@ app.patch(
           [booking.id]
         );
       } else if (nextStatus === 'no_show') {
+        // A no-show always retains the deposit -- unlike a cancellation,
+        // there's no 12-hour-notice question to evaluate.
         await client.query(
-          `UPDATE bookings SET status = 'no_show', no_show_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          `
+          UPDATE bookings
+          SET
+            status = 'no_show',
+            no_show_at = NOW(),
+            deposit_status = CASE WHEN deposit_status = 'paid' THEN 'retained'::deposit_status ELSE deposit_status END,
+            updated_at = NOW()
+          WHERE id = $1
+          `,
           [booking.id]
         );
       } else if (nextStatus === 'cancelled') {
+        // Same rule (and same "never auto-set 'refunded'") as the
+        // customer-facing cancel route -- see its comment for why.
+        const depositRetained =
+          booking.deposit_status === 'paid' && !isRefundEligible(booking.starts_at, new Date());
+
         await client.query(
           `
           UPDATE bookings
@@ -1813,10 +1929,16 @@ app.patch(
             cancelled_at = NOW(),
             cancelled_by_user_id = $2,
             cancel_reason = $3,
+            deposit_status = CASE WHEN $4 THEN 'retained'::deposit_status ELSE deposit_status END,
             updated_at = NOW()
           WHERE id = $1
           `,
-          [booking.id, req.adminUser.id, typeof reason === 'string' && reason.trim() ? reason.trim() : null]
+          [
+            booking.id,
+            req.adminUser.id,
+            typeof reason === 'string' && reason.trim() ? reason.trim() : null,
+            depositRetained
+          ]
         );
       }
 

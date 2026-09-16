@@ -4,7 +4,8 @@ import { sydneyDateKey, todaySydneyDateKey } from '../lib/format'
 import { Alert, LoadingState, EmptyState } from './Feedback'
 import BookingCalendar from './BookingCalendar'
 import TimePicker from './TimePicker'
-import ContactVerification from './ContactVerification'
+import BookingSecurityChoice from './BookingSecurityChoice'
+import { isLikelyAuMobile } from '../lib/validation'
 
 const EMPTY_FORM = {
   bookingSlotId: '',
@@ -24,6 +25,7 @@ function BookingForm() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [status, setStatus] = useState('idle') // idle | submitting | confirmed | pending | error
   const [result, setResult] = useState(null)
+  const [securityMethod, setSecurityMethod] = useState('email') // 'email' | 'deposit'
   const [verification, setVerification] = useState(null) // { channel, verificationId, rawValue } | null
 
   // The single source of truth for "is there a verification proof that
@@ -31,11 +33,17 @@ function BookingForm() {
   // render from the actual field values, not stored as a flag that could
   // go stale. The backend re-checks this same thing independently; this
   // only gates the UI.
-  const isVerificationCurrent = Boolean(
-    verification &&
-      ((verification.channel === 'sms' && verification.rawValue === form.customerPhone.trim()) ||
-        (verification.channel === 'email' && verification.rawValue === form.customerEmail.trim()))
+  const isEmailVerificationCurrent = Boolean(
+    verification && verification.channel === 'email' && verification.rawValue === form.customerEmail.trim()
   )
+
+  // No payment provider exists yet (see backend/payments/), so there's no
+  // "paid" proof to check here -- a valid-looking phone number is as far
+  // as this button can gate. Submitting still goes through the backend,
+  // which is what actually decides whether the deposit can be charged.
+  const isDepositPhoneValid = isLikelyAuMobile(form.customerPhone)
+
+  const isBookingSecured = securityMethod === 'deposit' ? isDepositPhoneValid : isEmailVerificationCurrent
 
   const largeGroupIdempotencyKey = useRef(null)
   const todayKey = todaySydneyDateKey()
@@ -113,6 +121,7 @@ function BookingForm() {
     setResult(null)
     setForm(EMPTY_FORM)
     setSelectedDate(null)
+    setSecurityMethod('email')
     setVerification(null)
   }
 
@@ -132,10 +141,15 @@ function BookingForm() {
     // The button is already disabled without this, but the backend is the
     // real boundary -- this is just so a submit that somehow fires anyway
     // (e.g. pressing Enter) gets the same clear message instead of a
-    // generic 403 from the API.
-    if (!isVerificationCurrent) {
+    // generic error from the API.
+    if (!isBookingSecured) {
       setStatus('error')
-      setResult({ message: 'Please verify your phone number or email before booking.' })
+      setResult({
+        message:
+          securityMethod === 'deposit'
+            ? 'Please enter a valid phone number for the deposit option.'
+            : 'Please verify your email before booking.',
+      })
       return
     }
 
@@ -144,13 +158,15 @@ function BookingForm() {
         ...form,
         partySize: Number(form.partySize),
         bookingSlotId: Number(form.bookingSlotId),
-        verificationId: verification.verificationId,
+        bookingSecurityMethod: securityMethod === 'deposit' ? 'deposit' : 'email_verification',
+        verificationId: securityMethod === 'email' ? verification.verificationId : undefined,
       })
 
       setStatus('confirmed')
       setResult({ reference: data.booking.booking_reference, hasPhone: Boolean(form.customerPhone.trim()) })
       setForm(EMPTY_FORM)
       setSelectedDate(null)
+      setSecurityMethod('email')
       setVerification(null)
       reloadSlots()
     } catch (error) {
@@ -159,6 +175,19 @@ function BookingForm() {
           setStatus('error')
           setResult({
             message: 'A phone number is required for a large-group booking request.',
+          })
+          return
+        }
+
+        // Large-group requests are staff-reviewed, not paid up front, so
+        // the deposit option doesn't apply to them -- they still need the
+        // same email verification proof standard bookings used to require
+        // from either channel.
+        if (securityMethod !== 'email' || !isEmailVerificationCurrent) {
+          setStatus('error')
+          setResult({
+            message:
+              'Parties this size need to submit a large-group request, which requires email verification. Please choose email verification and try again.',
           })
           return
         }
@@ -188,6 +217,7 @@ function BookingForm() {
           largeGroupIdempotencyKey.current = null
           setForm(EMPTY_FORM)
           setSelectedDate(null)
+          setSecurityMethod('email')
           setVerification(null)
         } catch (largeGroupError) {
           setStatus('error')
@@ -358,17 +388,19 @@ function BookingForm() {
         />
       </div>
 
-      <ContactVerification
+      <BookingSecurityChoice
         email={form.customerEmail}
         phone={form.customerPhone}
-        verification={isVerificationCurrent ? verification : null}
+        method={securityMethod}
+        onMethodChange={setSecurityMethod}
+        verification={isEmailVerificationCurrent ? verification : null}
         onVerified={setVerification}
       />
 
       <button
         type="submit"
         className="btn btn-primary btn-block"
-        disabled={status === 'submitting' || !form.bookingSlotId || !isVerificationCurrent}
+        disabled={status === 'submitting' || !form.bookingSlotId || !isBookingSecured}
       >
         {status === 'submitting' ? 'Submitting…' : 'Confirm Booking'}
       </button>
