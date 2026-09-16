@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import SectionHead from '../components/SectionHead'
+import VenueImage from '../components/VenueImage'
+import { venueImages } from '../data/venueImages'
 import { menuCategories } from '../data/menu'
 import { upcomingEvents } from '../data/events'
 import { formatDate, formatCurrency } from '../lib/format'
@@ -14,7 +16,16 @@ const featuredItems = [
 function Home() {
   return (
     <>
-      <section className="hero">
+      <section className="hero hero-photo-section">
+        <VenueImage
+          image={venueImages.mainBarAngle}
+          className="hero-photo"
+          objectPosition="50% 32%"
+          loading="eager"
+          fetchPriority="high"
+        />
+        <div className="hero-photo-overlay" />
+
         <div className="container hero-inner">
           <span className="eyebrow">Marrickville · Inner West Sydney</span>
           <h1>
@@ -51,6 +62,10 @@ function Home() {
             </Link>
           </div>
 
+          <VenueImage image={venueImages.mainBarFront} className="intro-photo" />
+        </div>
+
+        <div className="container">
           <div className="grid grid-3 feature-cards">
             <div className="card">
               <h3>Handcrafted</h3>
@@ -69,6 +84,23 @@ function Home() {
       </section>
 
       <section className="section section-tint">
+        <div className="container">
+          <SectionHead eyebrow="A Night at Bar 185" title="Inside Bar 185">
+            A look at the room — atmosphere, live music, and the space upstairs.
+          </SectionHead>
+
+          <div className="home-gallery-grid">
+            <VenueImage
+              image={venueImages.upstairsEventSpace}
+              className="home-gallery-tile home-gallery-tile-tall"
+            />
+            <VenueImage image={venueImages.interiorNight} className="home-gallery-tile" />
+            <VenueImage image={venueImages.liveMusicStage} className="home-gallery-tile" />
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
         <div className="container">
           <SectionHead eyebrow="On the Menu" title="A taste of what's pouring">
             A short list from our cocktails, wine and small plates menu.
@@ -93,7 +125,7 @@ function Home() {
         </div>
       </section>
 
-      <section className="section">
+      <section className="section section-tint">
         <div className="container">
           <SectionHead eyebrow="What's On" title="Upcoming at Bar 185">
             Live music, tastings, and nights worth putting in the diary.
