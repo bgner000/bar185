@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const pool = require('./db');
 const notifications = require('./notifications');
+const verification = require('./verification');
 const { saveMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
 
 const app = express();
@@ -167,6 +168,42 @@ app.get('/api/v1/venue-hours', async (req, res) => {
   }
 });
 
+// Contact verification (OTP) for the booking flow -- a customer must prove
+// control of the email or phone they're booking with before a table
+// booking or large-group request can be created. See backend/verification
+// for the full policy (expiry, attempts, rate limits, hashing).
+app.post('/api/v1/verification/send', async (req, res) => {
+  const { channel, email, phone } = req.body;
+
+  const result = await verification.sendCode({ channel, email, phone, ipAddress: req.ip });
+
+  if (!result.ok) {
+    const responseBody = { status: 'failed', message: result.message };
+    if (result.retryAfterSeconds) responseBody.retryAfterSeconds = result.retryAfterSeconds;
+    return res.status(result.status).json(responseBody);
+  }
+
+  return res.status(201).json({
+    status: 'ok',
+    verificationId: result.verificationId,
+    channel: result.channel,
+    expiresInSeconds: result.expiresInSeconds,
+    resendCooldownSeconds: result.resendCooldownSeconds
+  });
+});
+
+app.post('/api/v1/verification/verify', async (req, res) => {
+  const { verificationId, code } = req.body;
+
+  const result = await verification.verifyCode({ verificationId, code });
+
+  if (!result.ok) {
+    return res.status(result.status).json({ status: 'failed', message: result.message });
+  }
+
+  return res.status(200).json({ status: 'verified' });
+});
+
 app.post('/api/v1/bookings', async (req, res) => {
   const {
     bookingSlotId,
@@ -174,7 +211,8 @@ app.post('/api/v1/bookings', async (req, res) => {
     customerName,
     customerEmail,
     customerPhone,
-    specialRequests
+    specialRequests,
+    verificationId
   } = req.body;
 
   const slotId = Number(bookingSlotId);
@@ -304,6 +342,16 @@ app.post('/api/v1/bookings', async (req, res) => {
       });
     }
 
+    // Checked (and consumed) only now that every other reason to reject
+    // this request has already passed -- so a request that turns out to
+    // need large-group review, or loses a capacity race, never wastes the
+    // customer's verification on an attempt that was never going to book.
+    await verification.consumeVerification(client, {
+      verificationId,
+      customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone?.trim() || ''
+    });
+
     const bookingReference =
       'B185-' + crypto.randomBytes(5).toString('hex').toUpperCase();
 
@@ -383,6 +431,13 @@ app.post('/api/v1/bookings', async (req, res) => {
       await client.query('ROLLBACK');
     }
 
+    if (error instanceof verification.VerificationError) {
+      return res.status(403).json({
+        status: 'failed',
+        message: error.message
+      });
+    }
+
     console.error('Create booking error:', error.message);
 
     return res.status(500).json({
@@ -404,7 +459,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     partySize,
     customerName,
     customerPhone,
-    customerEmail
+    customerEmail,
+    verificationId
   } = req.body;
 
   if (!idempotencyKey || idempotencyKey.trim() === '') {
@@ -442,7 +498,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     partySize: requestedPartySize,
     customerName: customerName.trim(),
     customerPhone: customerPhone.trim(),
-    customerEmail: customerEmail.trim()
+    customerEmail: customerEmail.trim(),
+    verificationId
   };
 
   const requestHash = crypto
@@ -593,6 +650,15 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
       });
     }
 
+    // Same placement rule as the standard booking route: only once every
+    // other reason to reject this request has passed, so a request that
+    // fails validation never wastes the customer's verification.
+    await verification.consumeVerification(client, {
+      verificationId,
+      customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone.trim()
+    });
+
     const requestReference =
       'B185-LG-' +
       crypto.randomBytes(5).toString('hex').toUpperCase();
@@ -672,6 +738,13 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
   } catch (error) {
     if (client) {
       await client.query('ROLLBACK');
+    }
+
+    if (error instanceof verification.VerificationError) {
+      return res.status(403).json({
+        status: 'failed',
+        message: error.message
+      });
     }
 
     console.error(
@@ -1410,7 +1483,7 @@ app.patch(
 
       await client.query('COMMIT');
 
-      await notifications.notifyLargeGroupDeclined(request);
+      await notifications.notifyLargeGroupDeclined({ ...request, decline_reason: reason.trim() });
 
       return res.status(200).json({
         status: 'declined',
@@ -2302,6 +2375,43 @@ app.patch(
       if (client) {
         client.release();
       }
+    }
+  }
+);
+
+// Lets staff retry a notification (booking confirmation, OTP-adjacent
+// delivery, etc.) that failed -- e.g. because a provider was briefly down
+// or, in this environment, not configured. Booking success was never
+// coupled to delivery succeeding, so this is purely "try sending again,"
+// not anything that touches the booking/request that triggered it.
+app.post(
+  '/api/v1/admin/notifications/:notificationReference/retry',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { notificationReference } = req.params;
+
+    try {
+      const result = await notifications.retryNotificationJob(notificationReference.trim());
+
+      if (result.error === 'Notification job not found') {
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Notification job not found'
+        });
+      }
+
+      return res.status(200).json({
+        status: result.ok ? 'sent' : 'failed',
+        message: result.ok ? 'Notification re-sent' : (result.error || 'Retry failed'),
+        reference: result.reference
+      });
+    } catch (error) {
+      console.error('Retry notification error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not retry notification'
+      });
     }
   }
 );

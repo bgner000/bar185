@@ -4,6 +4,7 @@ import { sydneyDateKey, todaySydneyDateKey } from '../lib/format'
 import { Alert, LoadingState, EmptyState } from './Feedback'
 import BookingCalendar from './BookingCalendar'
 import TimePicker from './TimePicker'
+import ContactVerification from './ContactVerification'
 
 const EMPTY_FORM = {
   bookingSlotId: '',
@@ -23,6 +24,18 @@ function BookingForm() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [status, setStatus] = useState('idle') // idle | submitting | confirmed | pending | error
   const [result, setResult] = useState(null)
+  const [verification, setVerification] = useState(null) // { channel, verificationId, rawValue } | null
+
+  // The single source of truth for "is there a verification proof that
+  // still matches what's in the form right now" -- computed fresh every
+  // render from the actual field values, not stored as a flag that could
+  // go stale. The backend re-checks this same thing independently; this
+  // only gates the UI.
+  const isVerificationCurrent = Boolean(
+    verification &&
+      ((verification.channel === 'sms' && verification.rawValue === form.customerPhone.trim()) ||
+        (verification.channel === 'email' && verification.rawValue === form.customerEmail.trim()))
+  )
 
   const largeGroupIdempotencyKey = useRef(null)
   const todayKey = todaySydneyDateKey()
@@ -100,6 +113,7 @@ function BookingForm() {
     setResult(null)
     setForm(EMPTY_FORM)
     setSelectedDate(null)
+    setVerification(null)
   }
 
   const handleSubmit = async (event) => {
@@ -115,17 +129,29 @@ function BookingForm() {
       return
     }
 
+    // The button is already disabled without this, but the backend is the
+    // real boundary -- this is just so a submit that somehow fires anyway
+    // (e.g. pressing Enter) gets the same clear message instead of a
+    // generic 403 from the API.
+    if (!isVerificationCurrent) {
+      setStatus('error')
+      setResult({ message: 'Please verify your phone number or email before booking.' })
+      return
+    }
+
     try {
       const data = await api.createBooking({
         ...form,
         partySize: Number(form.partySize),
         bookingSlotId: Number(form.bookingSlotId),
+        verificationId: verification.verificationId,
       })
 
       setStatus('confirmed')
       setResult({ reference: data.booking.booking_reference, hasPhone: Boolean(form.customerPhone.trim()) })
       setForm(EMPTY_FORM)
       setSelectedDate(null)
+      setVerification(null)
       reloadSlots()
     } catch (error) {
       if (error.status === 422 && error.body?.status === 'large_group_required') {
@@ -152,6 +178,7 @@ function BookingForm() {
               customerName: form.customerName,
               customerPhone: form.customerPhone,
               customerEmail: form.customerEmail,
+              verificationId: verification.verificationId,
             },
             idempotencyKey
           )
@@ -161,6 +188,7 @@ function BookingForm() {
           largeGroupIdempotencyKey.current = null
           setForm(EMPTY_FORM)
           setSelectedDate(null)
+          setVerification(null)
         } catch (largeGroupError) {
           setStatus('error')
           setResult({ message: largeGroupError.message })
@@ -330,10 +358,17 @@ function BookingForm() {
         />
       </div>
 
+      <ContactVerification
+        email={form.customerEmail}
+        phone={form.customerPhone}
+        verification={isVerificationCurrent ? verification : null}
+        onVerified={setVerification}
+      />
+
       <button
         type="submit"
         className="btn btn-primary btn-block"
-        disabled={status === 'submitting' || !form.bookingSlotId}
+        disabled={status === 'submitting' || !form.bookingSlotId || !isVerificationCurrent}
       >
         {status === 'submitting' ? 'Submitting…' : 'Confirm Booking'}
       </button>

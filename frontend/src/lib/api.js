@@ -81,6 +81,18 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  sendVerificationCode: (payload) =>
+    request('/verification/send', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  verifyCode: (payload) =>
+    request('/verification/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
   cancelBooking: (bookingReference, customerEmail) =>
     request(`/bookings/${encodeURIComponent(bookingReference)}/cancel`, {
       method: 'PATCH',

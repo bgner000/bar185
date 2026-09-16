@@ -37,6 +37,22 @@ gracefully (`{ ok: false, error }`) and that attempt is recorded as a
 **not** throw, and it never affects the booking/cancellation/review request
 that triggered it.
 
+## Contact verification (OTP) uses these providers too, but bypasses notification_jobs
+
+`backend/verification/` (see its own comments) sends one-time codes through
+the same `sendEmail`/`sendSms` functions above, but calls them directly
+instead of going through `queueAndSend` — `notification_jobs` is a
+permanent, never-deleted log, and a one-time code must never be written to
+any durable row in plaintext, so it can't go through that pipeline. It has
+its own table, `verification_requests`, storing only a salted hash of the
+code.
+
+One additional variable, also in `backend/.env`:
+
+| Variable | Purpose |
+|---|---|
+| `OTP_HASH_SECRET` | HMAC pepper for hashing verification codes before they're stored. Optional — falls back to an insecure dev default if unset, so it works out of the box locally, but **must** be set to a long random value in any real deployment. |
+
 ## Known trial-account restriction
 
 A Twilio **trial** account can only send SMS to phone numbers you've
