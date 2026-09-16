@@ -9,10 +9,49 @@ function newReference() {
   return 'B185-NTF-' + crypto.randomBytes(5).toString('hex').toUpperCase();
 }
 
-// Creates one notification_jobs row and immediately attempts delivery
-// through the matching provider, recording the outcome back onto that row.
+// Attempts delivery for one existing notification_jobs row and records the
+// outcome back onto it. Shared by queueAndSend (first attempt, right after
+// insert) and retryNotificationJob (a later attempt on an already-failed
+// row) so both go through the exact same provider-call-then-record path.
 // Never throws: a provider failure is recorded as a failed job, not an
 // exception, so it can never undo or corrupt the booking that triggered it.
+async function attemptDelivery(jobId, { channel, recipientEmail, recipientPhone, subject, messageBody }) {
+  let result;
+
+  try {
+    if (channel === 'email') {
+      result = await sendEmail({ to: recipientEmail, subject, html: messageBody, text: messageBody });
+    } else {
+      result = await sendSms({ to: recipientPhone, body: messageBody });
+    }
+  } catch (error) {
+    result = { ok: false, error: error.message };
+  }
+
+  await pool.query(
+    `
+    UPDATE notification_jobs
+    SET
+      status = $2::notification_status,
+      attempt_count = attempt_count + 1,
+      last_error = $3,
+      sent_at = COALESCE($4::timestamptz, sent_at),
+      updated_at = NOW()
+    WHERE id = $1
+    `,
+    [
+      jobId,
+      result.ok ? 'sent' : 'failed',
+      result.ok ? null : result.error,
+      result.ok ? new Date().toISOString() : null,
+    ]
+  );
+
+  return result;
+}
+
+// Creates one notification_jobs row and immediately attempts delivery
+// through the matching provider, recording the outcome back onto that row.
 async function queueAndSend({
   type,
   channel,
@@ -52,38 +91,42 @@ async function queueAndSend({
 
   const jobId = insertResult.rows[0].id;
 
-  let result;
-
-  try {
-    if (channel === 'email') {
-      result = await sendEmail({ to: recipientEmail, subject, html: messageBody, text: messageBody });
-    } else {
-      result = await sendSms({ to: recipientPhone, body: messageBody });
-    }
-  } catch (error) {
-    result = { ok: false, error: error.message };
-  }
-
-  await pool.query(
-    `
-    UPDATE notification_jobs
-    SET
-      status = $2::notification_status,
-      attempt_count = attempt_count + 1,
-      last_error = $3,
-      sent_at = COALESCE($4::timestamptz, sent_at),
-      updated_at = NOW()
-    WHERE id = $1
-    `,
-    [
-      jobId,
-      result.ok ? 'sent' : 'failed',
-      result.ok ? null : result.error,
-      result.ok ? new Date().toISOString() : null,
-    ]
-  );
+  const result = await attemptDelivery(jobId, { channel, recipientEmail, recipientPhone, subject, messageBody });
 
   return { reference, ...result };
+}
+
+// Re-attempts delivery for a job that previously failed (or any job, in
+// principle), reusing the same recipient/content already stored on the row
+// rather than needing the original booking/enquiry again. This is what
+// "notification failure does not delete successful booking" resolves to in
+// practice -- the booking already exists; this just gives failed delivery
+// a way forward without ever touching it.
+async function retryNotificationJob(notificationReference) {
+  const jobResult = await pool.query(
+    `
+    SELECT id, channel, recipient_email, recipient_phone, subject, message_body, status
+    FROM notification_jobs
+    WHERE notification_reference = $1
+    `,
+    [notificationReference]
+  );
+
+  if (jobResult.rowCount === 0) {
+    return { ok: false, error: 'Notification job not found' };
+  }
+
+  const job = jobResult.rows[0];
+
+  const result = await attemptDelivery(job.id, {
+    channel: job.channel,
+    recipientEmail: job.recipient_email,
+    recipientPhone: job.recipient_phone,
+    subject: job.subject,
+    messageBody: job.message_body,
+  });
+
+  return { reference: notificationReference, ...result };
 }
 
 async function sendPair({ type, recipientName, recipientEmail, recipientPhone, content, bookingId, eventEnquiryId }) {
@@ -155,6 +198,7 @@ function notifyBookingConfirmed(booking, slot) {
       endsAt: slot.ends_at,
       partySize: booking.party_size,
       followedReview,
+      specialRequests: booking.special_requests || null,
     });
 
     await sendPair({
@@ -195,6 +239,7 @@ function notifyLargeGroupDeclined(request) {
     const content = templates.largeGroupDeclined({
       customerName: request.customer_name,
       requestReference: request.request_reference,
+      declineReason: request.decline_reason || null,
     });
 
     await sendPair({
@@ -230,4 +275,5 @@ module.exports = {
   notifyLargeGroupPending,
   notifyLargeGroupDeclined,
   notifyBookingCancelled,
+  retryNotificationJob,
 };
