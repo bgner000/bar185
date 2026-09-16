@@ -20,6 +20,18 @@ function maskPhone(value) {
   return `•••• ••• ${last3}`
 }
 
+// Client-side only, for enabling/disabling buttons -- mirrors (but doesn't
+// replace) the backend's own normalizeEmail/normalizeAuMobile, which is the
+// actual authority on whether a send request is accepted.
+function isLikelyEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
+function isLikelyAuMobile(value) {
+  const cleaned = value.trim().replace(/[\s-]/g, '')
+  return /^(\+?61|0)4\d{8}$/.test(cleaned)
+}
+
 // Verification state itself lives here (channel picked, send/verify status,
 // resend cooldown); the parent only receives the FINAL result via
 // onVerified, and always tells this component whether that result is still
@@ -62,6 +74,9 @@ function ContactVerification({ email, phone, verification, onVerified }) {
   const activeFieldValue = channel === 'sms' ? phone.trim() : email.trim()
   const isCurrent = Boolean(sentTo) && sentTo === activeFieldValue
   const effectiveSendState = isCurrent ? sendState : 'idle'
+
+  const emailValid = isLikelyEmail(email)
+  const phoneValid = isLikelyAuMobile(phone)
 
   const startSend = async (chosenChannel) => {
     const destinationValue = chosenChannel === 'sms' ? phone.trim() : email.trim()
@@ -136,7 +151,7 @@ function ContactVerification({ email, phone, verification, onVerified }) {
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            disabled={!phone.trim()}
+            disabled={!phoneValid}
             onClick={() => startSend('sms')}
           >
             Verify by SMS
@@ -144,7 +159,7 @@ function ContactVerification({ email, phone, verification, onVerified }) {
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            disabled={!email.trim()}
+            disabled={!emailValid}
             onClick={() => startSend('email')}
           >
             Verify by Email
@@ -161,7 +176,7 @@ function ContactVerification({ email, phone, verification, onVerified }) {
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={!phone.trim() || cooldownRemaining > 0}
+              disabled={!phoneValid || cooldownRemaining > 0}
               onClick={() => startSend('sms')}
             >
               Try SMS
@@ -169,7 +184,7 @@ function ContactVerification({ email, phone, verification, onVerified }) {
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              disabled={!email.trim() || cooldownRemaining > 0}
+              disabled={!emailValid || cooldownRemaining > 0}
               onClick={() => startSend('email')}
             >
               Try Email
@@ -225,7 +240,7 @@ function ContactVerification({ email, phone, verification, onVerified }) {
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => startSend(channel === 'sms' ? 'email' : 'sms')}
-              disabled={(channel === 'sms' ? !email.trim() : !phone.trim())}
+              disabled={channel === 'sms' ? !emailValid : !phoneValid}
             >
               Use {channel === 'sms' ? 'email' : 'SMS'} instead
             </button>
