@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../lib/api'
-import { sydneyDateKey, todaySydneyDateKey } from '../lib/format'
+import { sydneyDateKey, todaySydneyDateKey, formatDate, formatTime, formatCurrency } from '../lib/format'
 import { Alert, LoadingState, EmptyState } from './Feedback'
 import BookingCalendar from './BookingCalendar'
 import TimePicker from './TimePicker'
@@ -23,7 +23,7 @@ function BookingForm() {
 
   const [selectedDate, setSelectedDate] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [status, setStatus] = useState('idle') // idle | submitting | confirmed | pending | error
+  const [status, setStatus] = useState('idle') // idle | submitting | confirming-deposit | confirmed | pending | error
   const [result, setResult] = useState(null)
   const [securityMethod, setSecurityMethod] = useState('email') // 'email' | 'deposit'
   const [verification, setVerification] = useState(null) // { channel, verificationId, rawValue } | null
@@ -37,16 +37,112 @@ function BookingForm() {
     verification && verification.channel === 'email' && verification.rawValue === form.customerEmail.trim()
   )
 
-  // No payment provider exists yet (see backend/payments/), so there's no
-  // "paid" proof to check here -- a valid-looking phone number is as far
-  // as this button can gate. Submitting still goes through the backend,
-  // which is what actually decides whether the deposit can be charged.
+  // Payment itself happens at Stripe, after this form submits -- there's
+  // no "paid" proof to check client-side before that. A valid-looking
+  // phone number is as far as this button can gate; the backend revalidates
+  // everything (slot, capacity, party size) before it will even start a
+  // Checkout Session.
   const isDepositPhoneValid = isLikelyAuMobile(form.customerPhone)
 
   const isBookingSecured = securityMethod === 'deposit' ? isDepositPhoneValid : isEmailVerificationCurrent
 
   const largeGroupIdempotencyKey = useRef(null)
   const todayKey = todaySydneyDateKey()
+
+  // Picks up where the customer left off after Stripe Checkout redirects
+  // back here. Deliberately does NOT trust checkout_session_id being
+  // present as proof of anything -- it just tells us which booking to ask
+  // the backend about. The backend's webhook is what actually confirmed
+  // (or didn't) the booking; this only polls for that outcome so the
+  // customer isn't left on a blank success_url page while it lands. A
+  // real effect (synchronizing with an external async process), not
+  // state derived from props.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const checkoutSessionId = params.get('checkout_session_id')
+    const depositCancelled = params.get('depositCancelled')
+
+    if (!checkoutSessionId && !depositCancelled) return undefined
+
+    let cancelled = false
+    let attempts = 0
+
+    // setState calls are kept out of the effect body itself (nested in
+    // these functions instead) -- calling it directly in an effect body
+    // triggers cascading renders; see the same fix already applied in
+    // BookingSecurityChoice's cooldown timer and elsewhere in this app.
+    const finish = (nextStatus, nextResult) => {
+      if (cancelled) return
+      window.history.replaceState({}, '', window.location.pathname)
+      setStatus(nextStatus)
+      setResult(nextResult)
+    }
+
+    const poll = async () => {
+      if (cancelled) return
+
+      attempts += 1
+
+      try {
+        const data = await api.getDepositStatus(checkoutSessionId)
+
+        if (data.bookingStatus === 'confirmed') {
+          finish('confirmed', {
+            reference: data.bookingReference,
+            hasPhone: true,
+            depositPaid: true,
+            depositAmountCents: data.depositAmountCents,
+            partySize: data.partySize,
+            startsAt: data.startsAt,
+            endsAt: data.endsAt,
+          })
+          return
+        }
+
+        if (data.bookingStatus === 'cancelled') {
+          finish('error', {
+            message: 'Your payment could not be confirmed, so this booking was not completed. Please try again.',
+          })
+          return
+        }
+
+        if (attempts >= 10) {
+          finish('error', {
+            message:
+              "We're still confirming your payment. If you don't receive a confirmation email shortly, please contact us with your booking reference.",
+          })
+          return
+        }
+
+        setTimeout(poll, 2000)
+      } catch {
+        if (attempts >= 3) {
+          finish('error', { message: 'Could not check your payment status. Please contact us if you were charged.' })
+          return
+        }
+
+        setTimeout(poll, 2000)
+      }
+    }
+
+    const start = () => {
+      if (depositCancelled) {
+        finish('error', {
+          message: 'Deposit payment was cancelled. Your booking was not completed — you can try again below.',
+        })
+        return
+      }
+
+      setStatus('confirming-deposit')
+      poll()
+    }
+
+    start()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const applySlotsResponse = (promise) =>
     promise
@@ -153,13 +249,57 @@ function BookingForm() {
       return
     }
 
+    if (securityMethod === 'deposit') {
+      try {
+        const data = await api.startDepositBooking({
+          bookingSlotId: Number(form.bookingSlotId),
+          partySize: Number(form.partySize),
+          customerName: form.customerName,
+          customerEmail: form.customerEmail,
+          customerPhone: form.customerPhone,
+          specialRequests: form.specialRequests,
+        })
+
+        // Leaving the page on purpose -- the booking is only a capacity
+        // hold right now, not confirmed. Form state is left as-is (not
+        // cleared) in case the customer comes straight back via the
+        // browser's back button before paying.
+        window.location.href = data.checkoutUrl
+      } catch (error) {
+        if (error.status === 422 && error.body?.status === 'large_group_required') {
+          setStatus('error')
+          setResult({
+            message:
+              'Parties this size need to submit a large-group request instead of a deposit booking. Please get in touch with us directly, or reduce your party size.',
+          })
+          return
+        }
+
+        const isStaleAvailability = error.status === 404 || error.status === 409
+
+        setStatus('error')
+        setResult({
+          message: isStaleAvailability
+            ? `${error.message} Availability has been refreshed below — please choose a time again.`
+            : error.message,
+        })
+
+        if (isStaleAvailability) {
+          setForm((current) => ({ ...current, bookingSlotId: '' }))
+          reloadSlots()
+        }
+      }
+
+      return
+    }
+
     try {
       const data = await api.createBooking({
         ...form,
         partySize: Number(form.partySize),
         bookingSlotId: Number(form.bookingSlotId),
-        bookingSecurityMethod: securityMethod === 'deposit' ? 'deposit' : 'email_verification',
-        verificationId: securityMethod === 'email' ? verification.verificationId : undefined,
+        bookingSecurityMethod: 'email_verification',
+        verificationId: verification.verificationId,
       })
 
       setStatus('confirmed')
@@ -250,15 +390,50 @@ function BookingForm() {
   const dateSlots = effectiveSelectedDate ? availability.get(effectiveSelectedDate)?.slots ?? [] : []
   const hasAnyAvailability = [...availability.values()].some((entry) => entry.hasAvailability)
 
+  if (status === 'confirming-deposit') {
+    return (
+      <div className="card card-raised booking-result">
+        <LoadingState label="Confirming your payment…" />
+        <p>This only takes a moment. Please don't close this page.</p>
+      </div>
+    )
+  }
+
   if (status === 'confirmed' && result) {
     return (
       <div className="card card-raised booking-result">
         <Alert type="success" title="Booking confirmed">
           Booking confirmed. Reference: <strong>{result.reference}</strong>.
         </Alert>
+
+        {result.depositPaid && (
+          <dl className="booking-result-details">
+            <div>
+              <span>Date</span>
+              <span>{formatDate(result.startsAt)}</span>
+            </div>
+            <div>
+              <span>Time</span>
+              <span>
+                {formatTime(result.startsAt)} – {formatTime(result.endsAt)}
+              </span>
+            </div>
+            <div>
+              <span>Party size</span>
+              <span>{result.partySize} guests</span>
+            </div>
+            <div>
+              <span>Deposit paid</span>
+              <span>{formatCurrency((result.depositAmountCents || 1000) / 100)}</span>
+            </div>
+          </dl>
+        )}
+
         <p>
           Confirmation will be sent to your email{result.hasPhone ? ' and mobile' : ''}. Keep your
           reference handy if you need to cancel.
+          {result.depositPaid &&
+            ' Your deposit is credited toward your bill when you attend — cancel at least 12 hours ahead for a full refund.'}
         </p>
         <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
@@ -402,7 +577,13 @@ function BookingForm() {
         className="btn btn-primary btn-block"
         disabled={status === 'submitting' || !form.bookingSlotId || !isBookingSecured}
       >
-        {status === 'submitting' ? 'Submitting…' : 'Confirm Booking'}
+        {status === 'submitting'
+          ? securityMethod === 'deposit'
+            ? 'Redirecting to payment…'
+            : 'Submitting…'
+          : securityMethod === 'deposit'
+            ? 'Continue to Payment'
+            : 'Confirm Booking'}
       </button>
     </form>
   )

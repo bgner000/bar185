@@ -43,12 +43,12 @@ function adminHeaders() {
 
 // Multipart uploads must not set Content-Type themselves — the browser needs
 // to add its own boundary — so this bypasses request()'s JSON default.
-async function uploadRequest(path, formData) {
+async function uploadRequest(path, formData, method = 'POST') {
   let response
 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: adminHeaders(),
       body: formData,
     })
@@ -80,6 +80,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  startDepositBooking: (payload) =>
+    request('/bookings/deposit/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getDepositStatus: (checkoutSessionId) =>
+    request(`/bookings/deposit/status?checkoutSessionId=${encodeURIComponent(checkoutSessionId)}`),
 
   sendVerificationCode: (payload) =>
     request('/verification/send', {
@@ -115,6 +124,23 @@ export const api = {
   getAdminDashboard: () =>
     request('/admin/dashboard', { headers: adminHeaders() }),
 
+  getAdminNotifications: (limit) =>
+    request(`/admin/notifications${limit ? `?limit=${encodeURIComponent(limit)}` : ''}`, {
+      headers: adminHeaders(),
+    }),
+
+  markNotificationRead: (id) =>
+    request(`/admin/notifications/${encodeURIComponent(id)}/read`, {
+      method: 'PATCH',
+      headers: adminHeaders(),
+    }),
+
+  markAllNotificationsRead: () =>
+    request('/admin/notifications/read-all', {
+      method: 'PATCH',
+      headers: adminHeaders(),
+    }),
+
   approveLargeGroupRequest: (requestReference) =>
     request(
       `/admin/large-group-booking-requests/${encodeURIComponent(requestReference)}/approve`,
@@ -137,6 +163,9 @@ export const api = {
   getAdminBookingsForDate: (date) =>
     request(`/admin/bookings?date=${encodeURIComponent(date)}`, { headers: adminHeaders() }),
 
+  getAdminBookingByReference: (bookingReference) =>
+    request(`/admin/bookings/${encodeURIComponent(bookingReference)}`, { headers: adminHeaders() }),
+
   updateBookingStatus: (bookingReference, status, reason) =>
     request(`/admin/bookings/${encodeURIComponent(bookingReference)}/status`, {
       method: 'PATCH',
@@ -148,11 +177,38 @@ export const api = {
 
   getAdminMenuList: () => request('/admin/menu', { headers: adminHeaders() }),
 
-  uploadMenu: (file) => {
+  addMenuPage: (file, title) => {
     const formData = new FormData()
-    formData.append('menuFile', file)
-    return uploadRequest('/admin/menu', formData)
+    formData.append('pageFile', file)
+    if (title) formData.append('title', title)
+    return uploadRequest('/admin/menu/pages', formData)
   },
+
+  replaceMenuPage: (pageId, file, title) => {
+    const formData = new FormData()
+    if (file) formData.append('pageFile', file)
+    if (title !== undefined) formData.append('title', title)
+    return uploadRequest(`/admin/menu/pages/${encodeURIComponent(pageId)}`, formData, 'PATCH')
+  },
+
+  deleteMenuPage: (pageId) =>
+    request(`/admin/menu/pages/${encodeURIComponent(pageId)}`, {
+      method: 'DELETE',
+      headers: adminHeaders(),
+    }),
+
+  reorderMenuPages: (pageIds) =>
+    request('/admin/menu/pages/reorder', {
+      method: 'PATCH',
+      headers: adminHeaders(),
+      body: JSON.stringify({ pageIds }),
+    }),
+
+  deleteMenuVersion: (versionId) =>
+    request(`/admin/menu/versions/${encodeURIComponent(versionId)}`, {
+      method: 'DELETE',
+      headers: adminHeaders(),
+    }),
 
   getEvents: () => request('/events'),
 

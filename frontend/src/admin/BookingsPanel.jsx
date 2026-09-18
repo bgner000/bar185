@@ -3,12 +3,14 @@ import api from '../lib/api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
 import { Alert, LoadingState, EmptyState } from '../components/Feedback'
+import { useFocusedCard } from '../lib/useFocusedCard'
 import {
   formatTime,
   formatDateTime,
   formatDateKeyFull,
   todaySydneyDateKey,
   addDaysToDateKey,
+  sydneyDateKey,
 } from '../lib/format'
 
 const REFRESH_INTERVAL_MS = 30000
@@ -71,14 +73,14 @@ function depositBadge(booking) {
       return { text: 'No deposit', tone: 'neutral' }
     case 'paid':
       return booking.deposit_refund_eligible
-        ? { text: 'Refund eligible', tone: 'info' }
+        ? { text: 'Refund Eligible', tone: 'info' }
         : { text: 'A$10 Paid', tone: 'success' }
     case 'refunded':
       return { text: 'Refunded', tone: 'neutral' }
     case 'retained':
       return { text: 'Retained', tone: 'danger' }
     case 'pending':
-      return { text: 'Deposit pending', tone: 'warning' }
+      return { text: 'A$10 Payment Pending', tone: 'warning' }
     default:
       return { text: 'No deposit', tone: 'neutral' }
   }
@@ -111,18 +113,21 @@ function SummaryCard({ label, value }) {
   )
 }
 
-function BookingsPanel() {
+function BookingsPanel({ focusReference }) {
   const [selectedDate, setSelectedDate] = useState(todaySydneyDateKey())
   const [bookings, setBookings] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
+  const [focusError, setFocusError] = useState('')
   const [lastUpdated, setLastUpdated] = useState(null)
   const [rowBusy, setRowBusy] = useState('')
   const [confirmTarget, setConfirmTarget] = useState(null) // { booking, action }
   const [sortBy, setSortBy] = useState('time-asc')
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
+
+  const { isFocused } = useFocusedCard(focusReference)
 
   const fetchBookings = (date) =>
     api
@@ -146,6 +151,43 @@ function BookingsPanel() {
     const id = setInterval(() => fetchBookings(selectedDate), REFRESH_INTERVAL_MS)
     return () => clearInterval(id)
   }, [selectedDate])
+
+  // Deep link from a notification: the target booking might be on a date
+  // that isn't currently loaded at all, so its date/status has to be
+  // resolved from the server by reference first -- searching whatever's
+  // already in `bookings` would silently miss it. Only the filter/search
+  // state that would actually hide the match is touched (never the sort),
+  // so arriving here doesn't reset preferences that weren't in the way.
+  useEffect(() => {
+    if (!focusReference) {
+      setFocusError('')
+      return undefined
+    }
+
+    let cancelled = false
+    setFocusError('')
+
+    api
+      .getAdminBookingByReference(focusReference)
+      .then((data) => {
+        if (cancelled) return
+
+        const booking = data.booking
+        const bookingDateKey = sydneyDateKey(booking.starts_at)
+
+        setSelectedDate((current) => (current === bookingDateKey ? current : bookingDateKey))
+        setStatusFilter((current) => (current === 'all' || current === booking.status ? current : 'all'))
+        setSearch((current) => (matchesSearch(booking, current) ? current : ''))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setFocusError(err.status === 404 ? 'That booking is no longer available.' : err.message)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [focusReference])
 
   const handleManualRefresh = () => {
     setRefreshing(true)
@@ -255,6 +297,7 @@ function BookingsPanel() {
       </div>
 
       {error && <Alert type="error">{error}</Alert>}
+      {focusError && <Alert type="error">{focusError}</Alert>}
 
       {loading ? (
         <LoadingState label="Loading bookings…" />
@@ -306,7 +349,11 @@ function BookingsPanel() {
                 const noShowReady = new Date() >= eligibleAt
 
                 return (
-                  <div className="card admin-request-card" key={booking.id}>
+                  <div
+                    className={`card admin-request-card${isFocused(booking.booking_reference) ? ' admin-focused' : ''}`}
+                    key={booking.id}
+                    data-focus-id={booking.booking_reference}
+                  >
                     <div className="admin-request-head">
                       <div>
                         <h3>{booking.booking_reference}</h3>

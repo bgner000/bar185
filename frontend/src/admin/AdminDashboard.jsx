@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import api, { ADMIN_DEMO_EMAIL } from '../lib/api'
 import { Alert, LoadingState } from '../components/Feedback'
 import AdminNav from './AdminNav'
+import NotificationBell from './NotificationBell'
 import DashboardSummary from './DashboardSummary'
 import BookingsPanel from './BookingsPanel'
 import LargeGroupPanel from './LargeGroupPanel'
@@ -16,7 +18,16 @@ function AdminDashboard() {
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [updatingReference, setUpdatingReference] = useState('')
-  const [activeSection, setActiveSection] = useState('overview')
+
+  // section (and, when arriving from a notification, focus) live in the URL
+  // rather than plain component state, so a deep link is refreshable and
+  // shareable, and the browser Back button naturally undoes a notification
+  // jump instead of needing any manual history bookkeeping here.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeSection = searchParams.get('section') || 'overview'
+  const focusReference = searchParams.get('focus') || ''
+
+  const changeSection = (section) => setSearchParams({ section })
 
   const loadDashboard = () =>
     api
@@ -26,6 +37,17 @@ function AdminDashboard() {
         setLoadError('')
       })
       .catch((error) => setLoadError(error.message))
+
+  // A notification's target (a specific booking/request/enquiry) can be
+  // newer than the dashboard summary this component fetched once on mount
+  // -- e.g. a large-group request submitted after that load would otherwise
+  // be invisible to LargeGroupPanel's focus lookup even though it exists.
+  // Refreshing here, once per notification click, keeps that lookup honest
+  // without turning this into a polling component.
+  const focusNotification = (section, reference) => {
+    setSearchParams(reference ? { section, focus: reference } : { section })
+    loadDashboard()
+  }
 
   useEffect(() => {
     loadDashboard().finally(() => setLoading(false))
@@ -110,9 +132,12 @@ function AdminDashboard() {
           <p className="admin-eyebrow">Bar 185 Staff</p>
           <h1>Admin Dashboard</h1>
         </div>
-        <div className="admin-identity">
-          <span>{dashboard.admin.displayName}</span>
-          <span className="badge badge-info">{dashboard.admin.role}</span>
+        <div className="admin-header-right">
+          <NotificationBell onNavigate={focusNotification} />
+          <div className="admin-identity">
+            <span>{dashboard.admin.displayName}</span>
+            <span className="badge badge-info">{dashboard.admin.role}</span>
+          </div>
         </div>
       </header>
 
@@ -125,7 +150,7 @@ function AdminDashboard() {
       )}
 
       <div className="admin-body">
-        <AdminNav active={activeSection} onChange={setActiveSection} counts={counts} />
+        <AdminNav active={activeSection} onChange={changeSection} counts={counts} />
 
         <div className="admin-content">
           {activeSection === 'overview' && (
@@ -139,7 +164,7 @@ function AdminDashboard() {
             </>
           )}
 
-          {activeSection === 'bookings' && <BookingsPanel />}
+          {activeSection === 'bookings' && <BookingsPanel focusReference={focusReference} />}
 
           {activeSection === 'large-group' && (
             <>
@@ -148,6 +173,7 @@ function AdminDashboard() {
                 requests={largeGroupRequests}
                 onApprove={approveLargeGroupRequest}
                 onDecline={declineLargeGroupRequest}
+                focusReference={focusReference}
               />
             </>
           )}
@@ -159,6 +185,7 @@ function AdminDashboard() {
                 enquiries={eventEnquiries}
                 updatingReference={updatingReference}
                 onStatusChange={updateEventEnquiryStatus}
+                focusReference={focusReference}
               />
             </>
           )}

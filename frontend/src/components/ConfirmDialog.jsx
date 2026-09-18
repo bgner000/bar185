@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // A single reusable confirmation modal for every dangerous/important admin
 // action (approve, decline, admin cancel, mark no-show, replace menu, ...),
@@ -24,6 +27,40 @@ function ConfirmDialog({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const panelRef = useRef(null)
+
+  // Moves keyboard/screen-reader focus into the dialog the moment it
+  // appears (nothing does this by default -- without it, focus silently
+  // stays on the trigger button underneath the now-open overlay) and traps
+  // Tab/Shift+Tab within it while it's open, so a keyboard user can never
+  // tab into the page content the overlay is visually blocking.
+  useEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return undefined
+
+    panel.focus()
+
+    const handleTrapTab = (event) => {
+      if (event.key !== 'Tab') return
+
+      const focusable = Array.from(panel.querySelectorAll(FOCUSABLE_SELECTOR))
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    panel.addEventListener('keydown', handleTrapTab)
+    return () => panel.removeEventListener('keydown', handleTrapTab)
+  }, [])
 
   const handleConfirm = async () => {
     if (showReason && reasonRequired && !reason.trim()) {
@@ -54,10 +91,12 @@ function ConfirmDialog({
       onKeyDown={handleOverlayKeyDown}
     >
       <div
+        ref={panelRef}
         className="modal-panel"
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <h3>{title}</h3>
@@ -78,7 +117,11 @@ function ConfirmDialog({
           </div>
         )}
 
-        {error && <div className="alert alert-error modal-error">{error}</div>}
+        {error && (
+          <div className="alert alert-error modal-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="modal-actions">
           <button type="button" className="btn btn-secondary" disabled={submitting} onClick={onClose}>

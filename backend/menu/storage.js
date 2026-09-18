@@ -50,4 +50,21 @@ function saveMenuFile(buffer, mimeType) {
   };
 }
 
-module.exports = { saveMenuFile, STORAGE_DIR, PUBLIC_PREFIX, EXTENSIONS_BY_MIME };
+// Removes one stored file by its storagePath (the same value saveMenuFile
+// returned). Callers are responsible for confirming nothing else still
+// references this path first -- this function does not check, it just
+// unlinks. Missing-file is treated as success (already gone is the
+// desired end state), but any other error is surfaced so a caller that
+// cares can log it -- deletion here is always best-effort, never allowed
+// to fail the database change that already committed around it.
+function deleteMenuFile(storagePath) {
+  try {
+    fs.unlinkSync(path.join(STORAGE_DIR, storagePath));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}
+
+module.exports = { saveMenuFile, deleteMenuFile, STORAGE_DIR, PUBLIC_PREFIX, EXTENSIONS_BY_MIME };

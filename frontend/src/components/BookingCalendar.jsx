@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_LABEL_FORMAT = { month: 'long', year: 'numeric', timeZone: 'UTC' }
+const DAY_LABEL_FORMAT = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }
 
 function pad(value) {
   return String(value).padStart(2, '0')
@@ -40,7 +41,7 @@ function BookingCalendar({ availability, selectedDate, onSelectDate, todayKey })
   const canGoBack = `${view.year}-${pad(view.month)}` > todayKey.slice(0, 7)
 
   return (
-    <div className="booking-calendar">
+    <div className="booking-calendar" role="group" aria-label="Choose a date">
       <div className="booking-calendar-head">
         <button
           type="button"
@@ -51,7 +52,10 @@ function BookingCalendar({ availability, selectedDate, onSelectDate, todayKey })
         >
           ‹
         </button>
-        <span>{monthLabel}</span>
+        {/* aria-live: a screen-reader user who just pressed Previous/Next
+            month hears the new month, the same way a sighted user sees it
+            update -- without this, that change is silent. */}
+        <span aria-live="polite">{monthLabel}</span>
         <button
           type="button"
           className="calendar-nav-btn"
@@ -62,7 +66,7 @@ function BookingCalendar({ availability, selectedDate, onSelectDate, todayKey })
         </button>
       </div>
 
-      <div className="booking-calendar-grid booking-calendar-weekdays">
+      <div className="booking-calendar-grid booking-calendar-weekdays" aria-hidden="true">
         {WEEKDAY_LABELS.map((label) => (
           <span key={label}>{label}</span>
         ))}
@@ -79,6 +83,11 @@ function BookingCalendar({ availability, selectedDate, onSelectDate, todayKey })
           const hasAvailability = availability.get(dateKey)?.hasAvailability
           const isSelected = dateKey === selectedDate
           const disabled = isPast || !hasAvailability
+          const fullDateLabel = new Date(Date.UTC(view.year, view.month - 1, day)).toLocaleDateString(
+            'en-AU',
+            DAY_LABEL_FORMAT
+          )
+          const availabilityLabel = isPast ? 'past' : hasAvailability ? 'available' : 'fully booked'
 
           return (
             <button
@@ -89,9 +98,11 @@ function BookingCalendar({ availability, selectedDate, onSelectDate, todayKey })
               }`}
               disabled={disabled}
               onClick={() => onSelectDate(dateKey)}
+              aria-pressed={isSelected}
+              aria-label={`${fullDateLabel}${disabled ? `, ${availabilityLabel}` : ''}`}
             >
               {day}
-              {hasAvailability && !isPast && <span className="calendar-day-dot" />}
+              {hasAvailability && !isPast && <span className="calendar-day-dot" aria-hidden="true" />}
             </button>
           )
         })}

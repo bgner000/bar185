@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import api from '../lib/api'
+import { useEffect, useRef, useState } from 'react'
+import api, { API_ORIGIN } from '../lib/api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Alert, LoadingState, EmptyState } from '../components/Feedback'
 import { formatDateTime } from '../lib/format'
@@ -13,62 +13,156 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function validateFile(file) {
+  if (!ACCEPTED_TYPES.includes(file.type)) return 'Please choose a PDF, JPG, or PNG file.'
+  if (file.size > MAX_SIZE_BYTES) return 'That file is larger than the 20MB limit.'
+  return ''
+}
+
 function MenuPanel() {
-  const [documents, setDocuments] = useState(null)
+  const [version, setVersion] = useState(null)
+  const [history, setHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
-  const [pendingFile, setPendingFile] = useState(null)
-  const [fileError, setFileError] = useState('')
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [mutating, setMutating] = useState(false)
 
-  const loadDocuments = () =>
+  const [addFormOpen, setAddFormOpen] = useState(false)
+  const [addFile, setAddFile] = useState(null)
+  const [addTitle, setAddTitle] = useState('')
+  const [addFileError, setAddFileError] = useState('')
+
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleteVersionTarget, setDeleteVersionTarget] = useState(null)
+  const [versionMessage, setVersionMessage] = useState('')
+
+  const replaceInputRef = useRef(null)
+  const replaceTargetId = useRef(null)
+
+  // "small success message" -- shown briefly, then clears itself rather
+  // than sitting there until the next unrelated action happens to replace it.
+  useEffect(() => {
+    if (!versionMessage) return undefined
+    const timer = setTimeout(() => setVersionMessage(''), 4000)
+    return () => clearTimeout(timer)
+  }, [versionMessage])
+
+  const loadMenu = () =>
     api
       .getAdminMenuList()
       .then((data) => {
-        setDocuments(data.documents)
+        setVersion(data.version)
+        setHistory(data.history)
         setLoadError('')
       })
       .catch((error) => setLoadError(error.message))
       .finally(() => setLoading(false))
 
   useEffect(() => {
-    loadDocuments()
+    loadMenu()
   }, [])
 
-  const handleFileChange = (event) => {
+  const pages = version?.pages ?? []
+
+  const resetAddForm = () => {
+    setAddFormOpen(false)
+    setAddFile(null)
+    setAddTitle('')
+    setAddFileError('')
+  }
+
+  const handleAddFileChange = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
-
     if (!file) return
 
+    const error = validateFile(file)
+    setAddFileError(error)
+    setAddFile(error ? null : file)
+  }
+
+  const handleAddPageSubmit = async () => {
+    if (!addFile) return
+
     setActionError('')
-    setFileError('')
+    setMutating(true)
 
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      setFileError('Please choose a PDF, JPG, or PNG file.')
-      setPendingFile(null)
+    try {
+      await api.addMenuPage(addFile, addTitle.trim())
+      resetAddForm()
+      await loadMenu()
+    } catch (error) {
+      setActionError(error.message)
+    } finally {
+      setMutating(false)
+    }
+  }
+
+  const startReplace = (pageId) => {
+    replaceTargetId.current = pageId
+    replaceInputRef.current?.click()
+  }
+
+  const handleReplaceFileChosen = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const error = validateFile(file)
+    if (error) {
+      setActionError(error)
       return
     }
 
-    if (file.size > MAX_SIZE_BYTES) {
-      setFileError('That file is larger than the 20MB limit.')
-      setPendingFile(null)
-      return
+    setActionError('')
+    setMutating(true)
+
+    try {
+      await api.replaceMenuPage(replaceTargetId.current, file)
+      await loadMenu()
+    } catch (err) {
+      setActionError(err.message)
+    } finally {
+      setMutating(false)
     }
-
-    setPendingFile(file)
   }
 
-  const handlePublish = async () => {
-    await api.uploadMenu(pendingFile)
-    setPendingFile(null)
-    setConfirmOpen(false)
-    await loadDocuments()
+  const movePage = async (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= pages.length) return
+
+    const reordered = [...pages]
+    const [moved] = reordered.splice(fromIndex, 1)
+    reordered.splice(toIndex, 0, moved)
+
+    setActionError('')
+    setMutating(true)
+
+    try {
+      await api.reorderMenuPages(reordered.map((page) => page.id))
+      await loadMenu()
+    } catch (error) {
+      setActionError(error.message)
+    } finally {
+      setMutating(false)
+    }
   }
 
-  const active = documents?.find((doc) => doc.is_active)
-  const history = documents?.filter((doc) => !doc.is_active) ?? []
+  const handleDeleteConfirm = async () => {
+    await api.deleteMenuPage(deleteTarget.id)
+    setDeleteTarget(null)
+    await loadMenu()
+  }
+
+  // On failure this throws back into ConfirmDialog, which shows the error
+  // inline and keeps the dialog (and the version underneath it) exactly
+  // where it was -- history is only touched once the delete has actually
+  // succeeded, never optimistically.
+  const handleDeleteVersionConfirm = async () => {
+    await api.deleteMenuVersion(deleteVersionTarget.id)
+    setHistory((current) => current.filter((historyVersion) => historyVersion.id !== deleteVersionTarget.id))
+    setDeleteVersionTarget(null)
+    setVersionMessage('Previous menu version deleted.')
+  }
 
   if (loading) {
     return <LoadingState label="Loading menu…" />
@@ -87,7 +181,7 @@ function MenuPanel() {
       <h2 className="admin-section-title">Menu</h2>
 
       {actionError && (
-        <Alert type="error" title="Could not publish menu">
+        <Alert type="error" title="Could not update menu">
           {actionError}
         </Alert>
       )}
@@ -95,102 +189,199 @@ function MenuPanel() {
       <div className="card card-raised admin-menu-current">
         <h3>Current published menu</h3>
 
-        {active ? (
-          <div className="admin-menu-current-details">
-            <span className="badge badge-success">Published</span>
-            <div>
-              <span className="admin-detail-label">File name</span>
-              <span>{active.file_name}</span>
-            </div>
-            <div>
-              <span className="admin-detail-label">Uploaded</span>
-              <span>{formatDateTime(active.created_at)}</span>
-            </div>
-            <div>
-              <span className="admin-detail-label">Uploaded by</span>
-              <span>{active.uploaded_by_name || 'Unknown'}</span>
-            </div>
-            <a className="btn btn-secondary btn-sm" href={active.url} target="_blank" rel="noreferrer">
-              Preview current menu
-            </a>
-          </div>
+        {pages.length > 0 ? (
+          <ul className="admin-menu-pages-list">
+            {pages.map((page, index) => (
+              <li key={page.id} className="admin-menu-page-row">
+                <div className="admin-menu-page-info">
+                  <span className="admin-menu-page-heading">
+                    Page {page.sortOrder} — {page.title}
+                  </span>
+                  <span className="field-hint">{page.fileName}</span>
+                </div>
+                <div className="admin-menu-page-actions">
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={`${API_ORIGIN}${page.url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Preview
+                  </a>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={mutating}
+                    onClick={() => startReplace(page.id)}
+                  >
+                    Replace Page
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={mutating || index === 0}
+                    onClick={() => movePage(index, index - 1)}
+                  >
+                    Move Up
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={mutating || index === pages.length - 1}
+                    onClick={() => movePage(index, index + 1)}
+                  >
+                    Move Down
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger-outline btn-sm"
+                    disabled={mutating}
+                    onClick={() => setDeleteTarget(page)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
           <EmptyState label="No menu has been published yet." />
         )}
+
+        <input
+          type="file"
+          ref={replaceInputRef}
+          accept={ACCEPTED_TYPES.join(',')}
+          onChange={handleReplaceFileChosen}
+          className="visually-hidden"
+        />
       </div>
 
       <div className="card card-raised admin-menu-upload">
-        <h3>Upload / Replace Menu</h3>
-        <p className="field-hint">Accepted formats: PDF, JPG, or PNG. Maximum 20MB.</p>
+        <h3>Add a menu page</h3>
+        <p className="field-hint">
+          Accepted formats: PDF, JPG, or PNG. Maximum 20MB. A new page is added to the end of the
+          menu — existing pages are never replaced.
+        </p>
 
-        <label className="btn btn-secondary admin-menu-file-btn">
-          Choose File
-          <input
-            type="file"
-            accept={ACCEPTED_TYPES.join(',')}
-            onChange={handleFileChange}
-            className="visually-hidden"
-          />
-        </label>
+        {!addFormOpen ? (
+          <button type="button" className="btn btn-secondary" onClick={() => setAddFormOpen(true)}>
+            + Add Menu Page
+          </button>
+        ) : (
+          <div className="admin-menu-add-form">
+            <label className="btn btn-secondary admin-menu-file-btn">
+              Choose File
+              <input
+                type="file"
+                accept={ACCEPTED_TYPES.join(',')}
+                onChange={handleAddFileChange}
+                className="visually-hidden"
+              />
+            </label>
 
-        {fileError && <p className="admin-menu-file-error">{fileError}</p>}
+            {addFileError && <p className="admin-menu-file-error">{addFileError}</p>}
 
-        {pendingFile && (
-          <div className="admin-menu-file-preview">
-            <div>
-              <span className="admin-detail-label">Selected file</span>
-              <span>{pendingFile.name}</span>
-            </div>
-            <div>
-              <span className="admin-detail-label">Size</span>
-              <span>{formatFileSize(pendingFile.size)}</span>
-            </div>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setConfirmOpen(true)}>
-              Publish / Replace Menu
+            {addFile && (
+              <div className="admin-menu-file-preview">
+                <div>
+                  <span className="admin-detail-label">Selected file</span>
+                  <span>{addFile.name}</span>
+                </div>
+                <div>
+                  <span className="admin-detail-label">Size</span>
+                  <span>{formatFileSize(addFile.size)}</span>
+                </div>
+                <div className="field admin-menu-title-field">
+                  <label htmlFor="admin-menu-add-title">Title (optional)</label>
+                  <input
+                    id="admin-menu-add-title"
+                    type="text"
+                    value={addTitle}
+                    onChange={(event) => setAddTitle(event.target.value)}
+                    placeholder="e.g. Wine"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleAddPageSubmit}
+                  disabled={mutating}
+                >
+                  Add Page
+                </button>
+              </div>
+            )}
+
+            <button type="button" className="btn btn-ghost btn-sm admin-menu-cancel-add" onClick={resetAddForm}>
+              Cancel
             </button>
           </div>
         )}
       </div>
 
-      {history.length > 0 && (
+      {(history.length > 0 || versionMessage) && (
         <div className="card admin-menu-history">
           <h3>Previous versions</h3>
-          <ul className="admin-menu-history-list">
-            {history.map((doc) => (
-              <li key={doc.id}>
-                <span>{doc.file_name}</span>
-                <span className="field-hint">{formatDateTime(doc.created_at)}</span>
-              </li>
-            ))}
-          </ul>
+
+          {versionMessage && <Alert type="success">{versionMessage}</Alert>}
+
+          {history.length > 0 && (
+            <ul className="admin-menu-history-list">
+              {history.map((historyVersion) => (
+                <li key={historyVersion.id}>
+                  <div className="admin-menu-history-info">
+                    <span>{formatDateTime(historyVersion.publishedAt || historyVersion.createdAt)}</span>
+                    <span className="field-hint">
+                      {historyVersion.pages.length} page{historyVersion.pages.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="admin-menu-history-actions">
+                    {historyVersion.pages[0] && (
+                      <a
+                        className="btn btn-ghost btn-sm"
+                        href={`${API_ORIGIN}${historyVersion.pages[0].url}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-danger-outline btn-sm"
+                      onClick={() => setDeleteVersionTarget(historyVersion)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
-      {confirmOpen && pendingFile && (
+      {deleteTarget && (
         <ConfirmDialog
-          title="Replace the currently published menu?"
-          description="This immediately becomes the live public menu — no rebuild or deploy needed."
-          confirmLabel="Replace Menu"
-          onConfirm={handlePublish}
-          onClose={() => setConfirmOpen(false)}
-        >
-          <dl className="modal-detail-list">
-            <div>
-              <span>New file</span>
-              <span>{pendingFile.name}</span>
-            </div>
-            <div>
-              <span>Size</span>
-              <span>{formatFileSize(pendingFile.size)}</span>
-            </div>
-            {active && (
-              <div>
-                <span>Replacing</span>
-                <span>{active.file_name}</span>
-              </div>
-            )}
-          </dl>
-        </ConfirmDialog>
+          title={`Remove "${deleteTarget.title}" from this menu?`}
+          description="This page will no longer appear on the public menu. The uploaded file itself isn't deleted."
+          confirmLabel="Delete Page"
+          danger
+          onConfirm={handleDeleteConfirm}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {deleteVersionTarget && (
+        <ConfirmDialog
+          title="Delete this previous menu version?"
+          description="This permanently removes it from your menu history. Its file is only removed from storage if no other menu version still uses it."
+          confirmLabel="Delete Version"
+          danger
+          onConfirm={handleDeleteVersionConfirm}
+          onClose={() => setDeleteVersionTarget(null)}
+        />
       )}
     </div>
   )

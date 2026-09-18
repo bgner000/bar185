@@ -4,14 +4,257 @@ const crypto = require('crypto');
 const multer = require('multer');
 const pool = require('./db');
 const notifications = require('./notifications');
+const adminNotifications = require('./adminNotifications');
 const verification = require('./verification');
 const payments = require('./payments');
 const { isRefundEligible } = require('./bookings/cancellationPolicy');
+const { releaseExpiredHolds } = require('./bookings/holds');
 const { normalizeAuMobile } = require('./notifications/phone');
-const { saveMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
+const { saveMenuFile, deleteMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
 
 const app = express();
 const PORT = 3000;
+
+// Stripe requires the exact raw request body to verify a webhook's
+// signature, so this route (and only this one) must be registered before
+// the global express.json() below -- Express matches middleware/routes in
+// registration order, so a request to this exact path never reaches the
+// JSON parser. See backend/payments/providers/stripe.js for why an
+// invalid signature throws rather than returning { ok: false }.
+app.post(
+  '/api/v1/payments/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    let event;
+
+    try {
+      event = payments.constructWebhookEvent(req.body, req.get('stripe-signature'));
+    } catch (error) {
+      console.error('Stripe webhook signature verification failed:', error.message);
+      return res.status(400).send('Webhook signature verification failed');
+    }
+
+    try {
+      if (event.type === 'checkout.session.completed') {
+        await handleStripeCheckoutCompleted(event.data.object);
+      } else if (event.type === 'checkout.session.expired') {
+        await handleStripeCheckoutExpired(event.data.object);
+      }
+      // Any other event type is acknowledged without action -- Stripe only
+      // sends what a webhook endpoint is subscribed to, and a 2xx here
+      // stops Stripe from retrying something we don't need to handle.
+
+      return res.status(200).json({ received: true });
+    } catch (error) {
+      console.error('Stripe webhook processing error:', error.message);
+
+      // 5xx so Stripe retries the delivery -- safe to retry because both
+      // handlers below re-check the booking's current status before
+      // acting, so a retried (or duplicate) event can never re-confirm,
+      // re-charge, or re-expire something already handled.
+      return res.status(500).json({ status: 'failed' });
+    }
+  }
+);
+
+// Stripe is authoritative for payment success -- this is the ONLY place a
+// deposit booking's status ever becomes 'confirmed'. The re-check of
+// booking.status === 'pending' before acting is what makes a duplicate
+// webhook delivery a no-op instead of a duplicate confirmation.
+async function handleStripeCheckoutCompleted(session) {
+  let client;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const bookingResult = await client.query(
+      `
+      SELECT id, status, booking_slot_id, party_size
+      FROM bookings
+      WHERE stripe_checkout_session_id = $1
+      FOR UPDATE
+      `,
+      [session.id]
+    );
+
+    if (bookingResult.rowCount === 0) {
+      // No booking recognises this session -- nothing this webhook can do.
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const booking = bookingResult.rows[0];
+
+    if (booking.status !== 'pending') {
+      await client.query('ROLLBACK');
+
+      // The hold had already expired (or been paid by an earlier delivery
+      // of this same event) by the time this arrived. If it expired, the
+      // customer's card was still charged, so refund it immediately
+      // rather than keep money for a booking that no longer exists --
+      // capacity may already have gone to someone else, so the booking
+      // can't be safely resurrected here.
+      if (booking.status === 'cancelled') {
+        const paymentIntentId =
+          typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+
+        if (paymentIntentId) {
+          const refundResult = await payments.createRefund({ paymentIntentId });
+
+          if (!refundResult.ok) {
+            console.error('Auto-refund for a late payment on an expired hold failed:', refundResult.error);
+          }
+        }
+      }
+
+      return;
+    }
+
+    const paymentIntentId =
+      typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+
+    const confirmedResult = await client.query(
+      `
+      UPDATE bookings
+      SET
+        status = 'confirmed',
+        confirmed_at = NOW(),
+        deposit_status = 'paid',
+        stripe_payment_intent_id = $2,
+        paid_at = NOW(),
+        hold_expires_at = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
+        id, booking_reference, booking_slot_id, party_size,
+        customer_name, customer_email, customer_phone, special_requests
+      `,
+      [booking.id, paymentIntentId || null]
+    );
+
+    const slotResult = await client.query(
+      `SELECT starts_at, ends_at FROM booking_slots WHERE id = $1`,
+      [booking.booking_slot_id]
+    );
+
+    await client.query('COMMIT');
+
+    await notifications.notifyBookingConfirmed(confirmedResult.rows[0], slotResult.rows[0]);
+    await adminNotifications.notifyNewBooking(confirmedResult.rows[0], slotResult.rows[0]);
+  } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK');
+    }
+
+    throw error;
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+}
+
+// Prompt cleanup for the common case (customer never paid, or abandoned
+// checkout) -- the lazy sweep in backend/bookings/holds.js is the
+// fallback for whenever this event doesn't arrive, but acting on it here
+// releases the seats the moment Stripe tells us, not just whenever the
+// next booking attempt on this slot happens to trigger the sweep.
+async function handleStripeCheckoutExpired(session) {
+  let client;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    const bookingResult = await client.query(
+      `
+      SELECT id, status, booking_slot_id, party_size
+      FROM bookings
+      WHERE stripe_checkout_session_id = $1
+      FOR UPDATE
+      `,
+      [session.id]
+    );
+
+    if (bookingResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    const booking = bookingResult.rows[0];
+
+    if (booking.status !== 'pending') {
+      // Already confirmed (paid just before expiring) or already released
+      // -- nothing to do.
+      await client.query('ROLLBACK');
+      return;
+    }
+
+    await client.query(
+      `
+      UPDATE bookings
+      SET
+        status = 'cancelled',
+        cancelled_at = NOW(),
+        cancel_reason = 'Stripe checkout expired without payment',
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [booking.id]
+    );
+
+    await client.query(
+      `
+      UPDATE booking_slots
+      SET
+        reserved_capacity = GREATEST(reserved_capacity - $1, 0),
+        version_number = version_number + 1,
+        updated_at = NOW()
+      WHERE id = $2
+      `,
+      [booking.party_size, booking.booking_slot_id]
+    );
+
+    await client.query('COMMIT');
+  } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK');
+    }
+
+    throw error;
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+}
+
+// Attempts a real Stripe refund for an already-cancelled, refund-eligible
+// deposit booking, and only then marks deposit_status = 'refunded' with a
+// refunded_at timestamp. Always called after the cancellation itself has
+// already committed (see both cancel routes below), so a slow or failed
+// refund attempt never blocks or rolls back the actual table release --
+// the booking stays cancelled and the seats stay freed either way; only
+// the deposit's own status reflects whether money was really returned.
+async function refundDepositIfEligible(booking) {
+  if (!booking.stripe_payment_intent_id) {
+    console.error(`Cannot refund booking ${booking.booking_reference}: no stripe_payment_intent_id on record`);
+    return;
+  }
+
+  const refundResult = await payments.createRefund({ paymentIntentId: booking.stripe_payment_intent_id });
+
+  if (!refundResult.ok) {
+    console.error(`Refund failed for booking ${booking.booking_reference}:`, refundResult.error);
+    return;
+  }
+
+  await pool.query(
+    `UPDATE bookings SET deposit_status = 'refunded', refunded_at = NOW(), updated_at = NOW() WHERE id = $1`,
+    [booking.id]
+  );
+}
 
 const menuUpload = multer({
   storage: multer.memoryStorage(),
@@ -207,6 +450,14 @@ app.post('/api/v1/verification/verify', async (req, res) => {
   return res.status(200).json({ status: 'verified' });
 });
 
+// Standard bookings secured by email verification. This is the original,
+// pre-deposit booking route -- deposit bookings are a genuinely different
+// lifecycle (a capacity hold + async Stripe Checkout + webhook
+// confirmation, not a single request/response), so they're their own
+// route below (POST /api/v1/bookings/deposit/start) rather than a branch
+// bolted onto this one. Nothing about this route's behaviour has changed
+// from before deposits existed, other than requiring the verification
+// used specifically be an email one (see requiredChannel below).
 app.post('/api/v1/bookings', async (req, res) => {
   const {
     bookingSlotId,
@@ -215,16 +466,11 @@ app.post('/api/v1/bookings', async (req, res) => {
     customerEmail,
     customerPhone,
     specialRequests,
-    verificationId,
-    bookingSecurityMethod
+    verificationId
   } = req.body;
 
   const slotId = Number(bookingSlotId);
   const requestedPartySize = Number(partySize);
-  // Anything other than the literal 'deposit' is treated as the existing
-  // free email-verification path, so older clients that don't send this
-  // field at all keep working exactly as before.
-  const securityMethod = bookingSecurityMethod === 'deposit' ? 'deposit' : 'email_verification';
 
   if (
     !Number.isInteger(slotId) ||
@@ -240,19 +486,6 @@ app.post('/api/v1/bookings', async (req, res) => {
       status: 'failed',
       message: 'Valid booking slot, party size, customer name and email are required'
     });
-  }
-
-  let normalizedDepositPhone = null;
-
-  if (securityMethod === 'deposit') {
-    normalizedDepositPhone = normalizeAuMobile(customerPhone);
-
-    if (!normalizedDepositPhone) {
-      return res.status(400).json({
-        status: 'failed',
-        message: 'A valid Australian mobile number is required for the deposit option'
-      });
-    }
   }
 
   let client;
@@ -351,8 +584,19 @@ app.post('/api/v1/bookings', async (req, res) => {
       });
     }
 
+    // Any deposit hold on this slot that timed out without payment is
+    // released before capacity is evaluated, so a stale hold from an
+    // abandoned Stripe Checkout never blocks a real (email-verified)
+    // booking from taking those seats.
+    await releaseExpiredHolds(client, slotId);
+
+    const freshSlot = await client.query(
+      `SELECT reserved_capacity FROM booking_slots WHERE id = $1`,
+      [slotId]
+    );
+
     const availableCapacity =
-      Number(slot.total_capacity) - Number(slot.reserved_capacity);
+      Number(slot.total_capacity) - Number(freshSlot.rows[0].reserved_capacity);
 
     if (requestedPartySize > availableCapacity) {
       await client.query('ROLLBACK');
@@ -363,40 +607,20 @@ app.post('/api/v1/bookings', async (req, res) => {
       });
     }
 
-    // Checked/charged (and consumed) only now that every other reason to
-    // reject this request has already passed -- so a request that turns
-    // out to need large-group review, or loses a capacity race, never
-    // wastes the customer's verification, and is never charged a deposit
-    // for a booking that was never going to succeed anyway.
-    let depositProviderReference = null;
-
-    if (securityMethod === 'email_verification') {
-      await verification.consumeVerification(client, {
-        verificationId,
-        customerEmail: customerEmail.trim(),
-        customerPhone: customerPhone?.trim() || '',
-        requiredChannel: 'email'
-      });
-    } else {
-      const chargeResult = await payments.chargeDeposit({
-        amountCents: payments.DEPOSIT_AMOUNT_CENTS,
-        currency: payments.DEPOSIT_CURRENCY,
-        bookingReference: null,
-        customerEmail: customerEmail.trim(),
-        customerPhone: normalizedDepositPhone
-      });
-
-      if (!chargeResult.ok) {
-        await client.query('ROLLBACK');
-
-        return res.status(402).json({
-          status: 'failed',
-          message: chargeResult.error
-        });
-      }
-
-      depositProviderReference = chargeResult.providerId || null;
-    }
+    // Checked (and consumed) only now that every other reason to reject
+    // this request has already passed -- so a request that turns out to
+    // need large-group review, or loses a capacity race, never wastes the
+    // customer's verification on an attempt that was never going to book.
+    // requiredChannel: 'email' means a phone (SMS) proof can't be
+    // substituted here even though the underlying OTP endpoints still
+    // support both channels generically -- large-group requests don't
+    // pass this, and still accept either channel, unchanged.
+    await verification.consumeVerification(client, {
+      verificationId,
+      customerEmail: customerEmail.trim(),
+      customerPhone: customerPhone?.trim() || '',
+      requiredChannel: 'email'
+    });
 
     const bookingReference =
       'B185-' + crypto.randomBytes(5).toString('hex').toUpperCase();
@@ -415,10 +639,7 @@ app.post('/api/v1/bookings', async (req, res) => {
         special_requests,
         confirmed_at,
         booking_security_method,
-        deposit_amount_cents,
-        deposit_status,
-        payment_provider_reference,
-        paid_at
+        deposit_status
       )
       VALUES (
         $1,
@@ -431,11 +652,8 @@ app.post('/api/v1/bookings', async (req, res) => {
         $6,
         $7,
         NOW(),
-        $8,
-        $9,
-        $10,
-        $11,
-        $12
+        'email_verification',
+        'not_required'
       )
       RETURNING
         id,
@@ -461,12 +679,7 @@ app.post('/api/v1/bookings', async (req, res) => {
         customerName.trim(),
         customerEmail.trim(),
         customerPhone?.trim() || null,
-        specialRequests?.trim() || null,
-        securityMethod,
-        securityMethod === 'deposit' ? payments.DEPOSIT_AMOUNT_CENTS : null,
-        securityMethod === 'deposit' ? 'paid' : 'not_required',
-        depositProviderReference,
-        securityMethod === 'deposit' ? new Date().toISOString() : null
+        specialRequests?.trim() || null
       ]
     );
 
@@ -485,6 +698,7 @@ app.post('/api/v1/bookings', async (req, res) => {
     await client.query('COMMIT');
 
     await notifications.notifyBookingConfirmed(bookingResult.rows[0], slot);
+    await adminNotifications.notifyNewBooking(bookingResult.rows[0], slot);
 
     return res.status(201).json({
       status: 'confirmed',
@@ -514,6 +728,334 @@ app.post('/api/v1/bookings', async (req, res) => {
     }
   }
 });
+
+// Starts a deposit-secured standard booking. This does NOT confirm a
+// booking -- it validates exactly the same rules as POST /api/v1/bookings
+// above (slot open, not in the past, within the booking window, party
+// size, capacity), then holds the seats with a status = 'pending' row and
+// hands back a Stripe Checkout URL. The booking only ever becomes
+// 'confirmed' via the webhook below, once Stripe confirms payment really
+// happened -- never from this endpoint returning successfully, and never
+// just because the browser comes back to the success URL.
+app.post('/api/v1/bookings/deposit/start', async (req, res) => {
+  const { bookingSlotId, partySize, customerName, customerEmail, customerPhone, specialRequests } = req.body;
+
+  const slotId = Number(bookingSlotId);
+  const requestedPartySize = Number(partySize);
+
+  if (
+    !Number.isInteger(slotId) ||
+    slotId < 1 ||
+    !Number.isInteger(requestedPartySize) ||
+    requestedPartySize < 1 ||
+    typeof customerName !== 'string' ||
+    customerName.trim() === '' ||
+    typeof customerEmail !== 'string' ||
+    customerEmail.trim() === ''
+  ) {
+    return res.status(400).json({
+      status: 'failed',
+      message: 'Valid booking slot, party size, customer name and email are required'
+    });
+  }
+
+  const normalizedPhone = normalizeAuMobile(customerPhone);
+
+  if (!normalizedPhone) {
+    return res.status(400).json({
+      status: 'failed',
+      message: 'A valid Australian mobile number is required for the deposit option'
+    });
+  }
+
+  let client;
+
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+
+    // Same slot/capacity checks as the email-verification booking route,
+    // deliberately duplicated rather than shared -- this endpoint's
+    // lifecycle (hold now, confirm later via webhook) is different enough
+    // from a normal booking creation that large-group-booking-requests'
+    // own fully-separate validation, not a shared helper, is the existing
+    // pattern in this codebase to follow.
+    const slotResult = await client.query(
+      `
+      SELECT
+        bs.id,
+        bs.starts_at,
+        bs.ends_at,
+        bs.total_capacity,
+        bs.reserved_capacity,
+        bs.is_open,
+        br.minimum_party_size,
+        br.maximum_standard_party_size,
+        br.large_group_threshold,
+        br.booking_window_days
+      FROM booking_slots bs
+      JOIN booking_rules br
+        ON br.venue_id = bs.venue_id
+      WHERE bs.id = $1
+      FOR UPDATE OF bs
+      `,
+      [slotId]
+    );
+
+    if (slotResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+
+      return res.status(404).json({
+        status: 'failed',
+        message: 'Booking slot not found'
+      });
+    }
+
+    const slot = slotResult.rows[0];
+
+    if (!slot.is_open) {
+      await client.query('ROLLBACK');
+
+      return res.status(409).json({
+        status: 'failed',
+        message: 'This booking slot is closed'
+      });
+    }
+
+    const slotStart = new Date(slot.starts_at);
+    const now = new Date();
+
+    if (slotStart <= now) {
+      await client.query('ROLLBACK');
+
+      return res.status(409).json({
+        status: 'failed',
+        message: 'This booking slot is no longer available'
+      });
+    }
+
+    const bookingWindowEnd = new Date(
+      now.getTime() + Number(slot.booking_window_days) * 24 * 60 * 60 * 1000
+    );
+
+    if (slotStart > bookingWindowEnd) {
+      await client.query('ROLLBACK');
+
+      return res.status(400).json({
+        status: 'failed',
+        message: 'This booking is outside the permitted booking window'
+      });
+    }
+
+    if (requestedPartySize < Number(slot.minimum_party_size)) {
+      await client.query('ROLLBACK');
+
+      return res.status(400).json({
+        status: 'failed',
+        message: `Minimum party size is ${slot.minimum_party_size}`
+      });
+    }
+
+    if (
+      requestedPartySize > Number(slot.maximum_standard_party_size) ||
+      requestedPartySize >= Number(slot.large_group_threshold)
+    ) {
+      await client.query('ROLLBACK');
+
+      return res.status(422).json({
+        status: 'large_group_required',
+        message: 'This party size requires a large-group booking request',
+        nextEndpoint: '/api/v1/large-group-booking-requests'
+      });
+    }
+
+    await releaseExpiredHolds(client, slotId);
+
+    const freshSlot = await client.query(
+      `SELECT reserved_capacity FROM booking_slots WHERE id = $1`,
+      [slotId]
+    );
+
+    const availableCapacity =
+      Number(slot.total_capacity) - Number(freshSlot.rows[0].reserved_capacity);
+
+    if (requestedPartySize > availableCapacity) {
+      await client.query('ROLLBACK');
+
+      return res.status(409).json({
+        status: 'failed',
+        message: 'Not enough capacity is available for this booking'
+      });
+    }
+
+    const bookingReference =
+      'B185-' + crypto.randomBytes(5).toString('hex').toUpperCase();
+    const holdExpiresAt = new Date(Date.now() + payments.HOLD_DURATION_MINUTES * 60 * 1000);
+
+    const frontendOrigin = process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+
+    const checkoutResult = await payments.createCheckoutSession({
+      amountCents: payments.DEPOSIT_AMOUNT_CENTS,
+      currency: payments.DEPOSIT_CURRENCY,
+      bookingReference,
+      customerEmail: customerEmail.trim(),
+      successUrl: `${frontendOrigin}/book?checkout_session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${frontendOrigin}/book?depositCancelled=1`,
+      expiresInSeconds: payments.STRIPE_SESSION_EXPIRY_SECONDS
+    });
+
+    if (!checkoutResult.ok) {
+      await client.query('ROLLBACK');
+
+      return res.status(502).json({
+        status: 'failed',
+        message: checkoutResult.error
+      });
+    }
+
+    // The hold: seats are reserved right now, exactly like a confirmed
+    // booking would reserve them, so a second customer can't also be
+    // offered these seats while this one is at Stripe Checkout. Status
+    // 'pending' (not 'confirmed') is what keeps it out of every view that
+    // shows real bookings until the webhook says otherwise.
+    await client.query(
+      `
+      INSERT INTO bookings (
+        booking_reference,
+        booking_slot_id,
+        booking_type,
+        status,
+        party_size,
+        customer_name,
+        customer_email,
+        customer_phone,
+        special_requests,
+        booking_security_method,
+        deposit_amount_cents,
+        deposit_status,
+        stripe_checkout_session_id,
+        hold_expires_at
+      )
+      VALUES (
+        $1, $2, 'standard', 'pending', $3, $4, $5, $6, $7,
+        'deposit', $8, 'pending', $9, $10
+      )
+      `,
+      [
+        bookingReference,
+        slotId,
+        requestedPartySize,
+        customerName.trim(),
+        customerEmail.trim(),
+        normalizedPhone,
+        specialRequests?.trim() || null,
+        payments.DEPOSIT_AMOUNT_CENTS,
+        checkoutResult.sessionId,
+        holdExpiresAt.toISOString()
+      ]
+    );
+
+    await client.query(
+      `
+      UPDATE booking_slots
+      SET
+        reserved_capacity = reserved_capacity + $1,
+        version_number = version_number + 1,
+        updated_at = NOW()
+      WHERE id = $2
+      `,
+      [requestedPartySize, slotId]
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      status: 'ok',
+      bookingReference,
+      checkoutUrl: checkoutResult.url
+    });
+  } catch (error) {
+    if (client) {
+      await client.query('ROLLBACK');
+    }
+
+    console.error('Start deposit booking error:', error.message);
+
+    return res.status(500).json({
+      status: 'failed',
+      message: 'Could not start the deposit payment'
+    });
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+});
+
+// Lets the frontend check what really happened after a customer returns
+// from Stripe Checkout, instead of trusting the redirect URL alone (the
+// webhook above is what actually confirms the booking; this just reports
+// its current state). checkoutSessionId is the same high-entropy,
+// Stripe-generated id already in the success/cancel URL, so no separate
+// customer identity check is needed to look it up.
+app.get('/api/v1/bookings/deposit/status', async (req, res) => {
+  const { checkoutSessionId } = req.query;
+
+  if (typeof checkoutSessionId !== 'string' || !checkoutSessionId.trim()) {
+    return res.status(400).json({
+      status: 'failed',
+      message: 'checkoutSessionId is required'
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        b.booking_reference,
+        b.status,
+        b.deposit_status,
+        b.deposit_amount_cents,
+        b.party_size,
+        bs.starts_at,
+        bs.ends_at
+      FROM bookings b
+      JOIN booking_slots bs
+        ON bs.id = b.booking_slot_id
+      WHERE b.stripe_checkout_session_id = $1
+      `,
+      [checkoutSessionId.trim()]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        status: 'failed',
+        message: 'No booking found for that checkout session'
+      });
+    }
+
+    const booking = result.rows[0];
+
+    return res.status(200).json({
+      status: 'ok',
+      bookingStatus: booking.status,
+      depositStatus: booking.deposit_status,
+      depositAmountCents: booking.deposit_amount_cents,
+      bookingReference: booking.booking_reference,
+      partySize: booking.party_size,
+      startsAt: booking.starts_at,
+      endsAt: booking.ends_at
+    });
+  } catch (error) {
+    console.error('Deposit status check error:', error.message);
+
+    return res.status(500).json({
+      status: 'failed',
+      message: 'Could not check payment status'
+    });
+  }
+});
+
 app.post('/api/v1/large-group-booking-requests', async (req, res) => {
   const idempotencyKey = req.get('Idempotency-Key');
 
@@ -797,6 +1339,7 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     await client.query('COMMIT');
 
     await notifications.notifyLargeGroupPending(requestResult.rows[0]);
+    await adminNotifications.notifyLargeGroupRequest(requestResult.rows[0]);
 
     return res.status(201).json(responseBody);
   } catch (error) {
@@ -959,6 +1502,8 @@ app.post('/api/v1/event-enquiries', async (req, res) => {
       ]
     );
 
+    await adminNotifications.notifyEventEnquiry(result.rows[0]);
+
     return res.status(201).json({
       status: 'submitted',
       message: 'Event enquiry submitted for staff review',
@@ -1062,6 +1607,105 @@ app.get(
     }
   }
 );
+
+// Admin notification centre (the header bell). Newest first, capped at a
+// sane limit so a long-running venue can never return an unbounded list.
+// unreadCount is computed alongside the page itself (not derived from it
+// client-side) so it stays correct even when the page is capped below the
+// true unread total.
+app.get(
+  '/api/v1/admin/notifications',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 30;
+
+    try {
+      const [listResult, unreadResult] = await Promise.all([
+        pool.query(
+          `
+          SELECT id, type, title, message, entity_type, entity_id, metadata, is_read, read_at, created_at
+          FROM admin_notifications
+          ORDER BY created_at DESC
+          LIMIT $1
+          `,
+          [limit]
+        ),
+        pool.query(`SELECT COUNT(*)::int AS count FROM admin_notifications WHERE is_read = FALSE`)
+      ]);
+
+      return res.status(200).json({
+        notifications: listResult.rows,
+        unreadCount: unreadResult.rows[0].count
+      });
+    } catch (error) {
+      console.error('Admin notifications list error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not load notifications'
+      });
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/admin/notifications/read-all',
+  requireApprovedAdmin,
+  async (req, res) => {
+    try {
+      await pool.query(
+        `UPDATE admin_notifications SET is_read = TRUE, read_at = COALESCE(read_at, NOW()) WHERE is_read = FALSE`
+      );
+
+      return res.status(200).json({ status: 'ok', unreadCount: 0 });
+    } catch (error) {
+      console.error('Admin notifications mark-all-read error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not mark notifications as read'
+      });
+    }
+  }
+);
+
+app.patch(
+  '/api/v1/admin/notifications/:id/read',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'Invalid notification id'
+      });
+    }
+
+    try {
+      await pool.query(
+        `UPDATE admin_notifications SET is_read = TRUE, read_at = COALESCE(read_at, NOW()) WHERE id = $1`,
+        [id]
+      );
+
+      const unreadResult = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM admin_notifications WHERE is_read = FALSE`
+      );
+
+      return res.status(200).json({ status: 'ok', unreadCount: unreadResult.rows[0].count });
+    } catch (error) {
+      console.error('Admin notification mark-read error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not mark notification as read'
+      });
+    }
+  }
+);
 app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
   const { bookingReference } = req.params;
   const { customerEmail } = req.body;
@@ -1096,6 +1740,7 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
         b.customer_phone,
         b.status,
         b.deposit_status,
+        b.stripe_payment_intent_id,
         bs.starts_at
       FROM bookings b
       JOIN booking_slots bs
@@ -1172,13 +1817,15 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
       [booking.id]
     );
 
-    // A deposit already paid is only ever marked 'retained' here -- never
-    // 'refunded'. Retaining requires no payment action (the money simply
-    // isn't returned), but an actual refund does, and no payment provider
-    // is connected yet (see backend/payments/). A deposit cancelled with
-    // >=12 hours' notice is left as 'paid' and shown to staff as
-    // refund-eligible until a real refund is processed.
-    const depositRetained = booking.deposit_status === 'paid' && !isRefundEligible(booking.starts_at, new Date());
+    // A paid deposit is either 'retained' (< 12 hours' notice -- no
+    // payment action needed, the money simply isn't returned) or left as
+    // 'paid' here and refunded for real just below once this transaction
+    // has committed -- never flipped straight to 'refunded' inside this
+    // update, since that would claim money moved before Stripe has
+    // actually confirmed it did.
+    const isPaidDeposit = booking.deposit_status === 'paid';
+    const refundEligible = isPaidDeposit && isRefundEligible(booking.starts_at, new Date());
+    const depositRetained = isPaidDeposit && !refundEligible;
 
     // cancelled_at wasn't previously set by this customer-facing route
     // (only the admin cancel path set it) -- now needed so the admin
@@ -1200,6 +1847,11 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
     await client.query('COMMIT');
 
     await notifications.notifyBookingCancelled(booking);
+    await adminNotifications.notifyBookingCancelled(booking);
+
+    if (refundEligible) {
+      await refundDepositIfEligible(booking);
+    }
 
     return res.status(200).json({
       status: 'cancelled',
@@ -1720,6 +2372,8 @@ app.get(
           b.deposit_amount_cents,
           b.deposit_status,
           b.payment_provider_reference,
+          b.stripe_checkout_session_id,
+          b.stripe_payment_intent_id,
           b.paid_at,
           b.refunded_at,
           bs.starts_at,
@@ -1759,6 +2413,83 @@ app.get(
       return res.status(500).json({
         status: 'failed',
         message: 'Could not load bookings for that date'
+      });
+    }
+  }
+);
+
+// Looks up one booking by its reference regardless of date -- what the
+// admin notification bell's "deep link" uses to find which service date a
+// notified booking belongs to before switching the Bookings page there.
+// Same row shape (and the same deposit_refund_eligible derivation) as the
+// date-scoped list above, just filtered by reference instead of a day.
+app.get(
+  '/api/v1/admin/bookings/:bookingReference',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { bookingReference } = req.params;
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          b.id,
+          b.booking_reference,
+          b.booking_type,
+          b.status,
+          b.party_size,
+          b.customer_name,
+          b.customer_email,
+          b.customer_phone,
+          b.special_requests,
+          b.seated_at,
+          b.completed_at,
+          b.no_show_at,
+          b.cancelled_at,
+          b.cancel_reason,
+          b.booking_security_method,
+          b.deposit_amount_cents,
+          b.deposit_status,
+          b.payment_provider_reference,
+          b.stripe_checkout_session_id,
+          b.stripe_payment_intent_id,
+          b.paid_at,
+          b.refunded_at,
+          bs.starts_at,
+          bs.ends_at
+        FROM bookings b
+        JOIN booking_slots bs
+          ON bs.id = b.booking_slot_id
+        WHERE b.booking_reference = $1
+        `,
+        [bookingReference.trim()]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Booking not found'
+        });
+      }
+
+      const row = result.rows[0];
+
+      const booking = {
+        ...row,
+        deposit_refund_eligible:
+          row.status === 'cancelled' &&
+          row.deposit_status === 'paid' &&
+          row.cancelled_at !== null &&
+          isRefundEligible(row.starts_at, row.cancelled_at)
+      };
+
+      return res.status(200).json({ status: 'ok', booking });
+    } catch (error) {
+      console.error('Admin booking-by-reference error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not load that booking'
       });
     }
   }
@@ -1811,6 +2542,7 @@ app.patch(
           b.customer_email,
           b.customer_phone,
           b.deposit_status,
+          b.stripe_payment_intent_id,
           bs.starts_at
         FROM bookings b
         JOIN booking_slots bs
@@ -1915,11 +2647,19 @@ app.patch(
           `,
           [booking.id]
         );
-      } else if (nextStatus === 'cancelled') {
+      }
+
+      // Computed before the branch below runs so it's available after
+      // COMMIT for the actual refund attempt, same placement rule as the
+      // customer-facing cancel route.
+      let refundEligible = false;
+
+      if (nextStatus === 'cancelled') {
         // Same rule (and same "never auto-set 'refunded'") as the
         // customer-facing cancel route -- see its comment for why.
-        const depositRetained =
-          booking.deposit_status === 'paid' && !isRefundEligible(booking.starts_at, new Date());
+        const isPaidDeposit = booking.deposit_status === 'paid';
+        refundEligible = isPaidDeposit && isRefundEligible(booking.starts_at, new Date());
+        const depositRetained = isPaidDeposit && !refundEligible;
 
         await client.query(
           `
@@ -1946,6 +2686,10 @@ app.patch(
 
       if (nextStatus === 'cancelled') {
         await notifications.notifyBookingCancelled(booking);
+
+        if (refundEligible) {
+          await refundDepositIfEligible(booking);
+        }
       }
 
       return res.status(200).json({
@@ -1972,36 +2716,115 @@ app.patch(
   }
 );
 
+// Best-effort display title for a page that was never given one explicitly
+// (an original upload, or one migrated from the old single-file
+// menu_documents system, which had no title concept at all). Never
+// written to the database -- computed fresh on every response, so
+// changing this logic later needs no backfill.
+function deriveMenuPageTitle(fileName, sortOrder) {
+  const base = String(fileName || '').replace(/\.[^./]+$/, '');
+  const cleaned = base
+    .replace(/^bar[-_ ]?185[-_ ]?menu[-_ ]?/i, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+
+  if (!cleaned) return `Menu Page ${sortOrder}`;
+
+  return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function toMenuPageResponse(row) {
+  return {
+    // BIGINT columns come back from `pg` as strings (precision safety) --
+    // cast here so every id this API hands out is a plain number, since
+    // the reorder route's { pageIds: [...] } contract expects one.
+    id: Number(row.id),
+    sortOrder: row.sort_order,
+    title: row.title || deriveMenuPageTitle(row.file_name, row.sort_order),
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    fileSizeBytes: Number(row.file_size_bytes),
+    url: `${PUBLIC_PREFIX}/${row.storage_path}`,
+    createdAt: row.created_at
+  };
+}
+
+// Row-locks the venue's published version (if one exists) so a concurrent
+// add-page request can't compute the same "next sort_order" twice.
+async function getOrCreatePublishedMenuVersion(client, venueId, uploadedByUserId) {
+  const existing = await client.query(
+    `SELECT id FROM menu_versions WHERE venue_id = $1 AND status = 'published' FOR UPDATE`,
+    [venueId]
+  );
+
+  if (existing.rowCount > 0) {
+    return existing.rows[0].id;
+  }
+
+  const created = await client.query(
+    `
+    INSERT INTO menu_versions (venue_id, status, published_at, uploaded_by_user_id)
+    VALUES ($1, 'published', NOW(), $2)
+    RETURNING id
+    `,
+    [venueId, uploadedByUserId]
+  );
+
+  return created.rows[0].id;
+}
+
+// Re-numbers a version's pages to a contiguous 1..N run, in their current
+// relative order. Used after a delete (which leaves a gap) so ordering
+// stays a clean sequence. Goes through a large temporary offset first --
+// updating straight to final values one row at a time would collide with
+// uq_menu_page_version_sort_order the moment two rows' target values cross.
+async function resequenceMenuPages(client, menuVersionId) {
+  await client.query(
+    `UPDATE menu_pages SET sort_order = sort_order + 100000 WHERE menu_version_id = $1`,
+    [menuVersionId]
+  );
+
+  await client.query(
+    `
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY sort_order) AS rn
+      FROM menu_pages
+      WHERE menu_version_id = $1
+    )
+    UPDATE menu_pages mp
+    SET sort_order = ranked.rn, updated_at = NOW()
+    FROM ranked
+    WHERE mp.id = ranked.id
+    `,
+    [menuVersionId]
+  );
+}
+
+// Public menu: every page of the venue's published version, in order. A
+// published version with zero pages (the last page was just deleted) is
+// reported the same as no version at all -- there's nothing for the
+// existing "menu not published yet" empty state to distinguish.
 app.get('/api/v1/menu', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT
-        md.file_name,
-        md.storage_path,
-        md.mime_type,
-        md.file_size_bytes,
-        md.created_at
-      FROM menu_documents md
+      SELECT mp.id, mp.sort_order, mp.title, mp.file_name, mp.storage_path, mp.mime_type, mp.file_size_bytes, mp.created_at
+      FROM menu_pages mp
+      JOIN menu_versions mv
+        ON mv.id = mp.menu_version_id
       JOIN venues v
-        ON v.id = md.venue_id
+        ON v.id = mv.venue_id
       WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
-        AND md.is_active = TRUE
-      LIMIT 1
+        AND mv.status = 'published'
+      ORDER BY mp.sort_order ASC
     `);
 
     if (result.rowCount === 0) {
       return res.status(200).json({ menu: null });
     }
 
-    const doc = result.rows[0];
-
     return res.status(200).json({
       menu: {
-        fileName: doc.file_name,
-        mimeType: doc.mime_type,
-        fileSizeBytes: Number(doc.file_size_bytes),
-        publishedAt: doc.created_at,
-        url: `${PUBLIC_PREFIX}/${doc.storage_path}`
+        pages: result.rows.map(toMenuPageResponse)
       }
     });
   } catch (error) {
@@ -2014,38 +2837,58 @@ app.get('/api/v1/menu', async (req, res) => {
   }
 });
 
+// Admin menu screen: the published version's pages (what "+ Add Menu
+// Page", Replace/Move/Delete all act on) plus prior menu_documents-era
+// uploads, each preserved as its own one-page archived version.
 app.get(
   '/api/v1/admin/menu',
   requireApprovedAdmin,
   async (req, res) => {
     try {
-      const result = await pool.query(`
-        SELECT
-          md.id,
-          md.file_name,
-          md.storage_path,
-          md.mime_type,
-          md.file_size_bytes,
-          md.is_active,
-          md.created_at,
-          u.display_name AS uploaded_by_name
-        FROM menu_documents md
+      const versionsResult = await pool.query(`
+        SELECT mv.id, mv.status, mv.published_at, mv.created_at, u.display_name AS uploaded_by_name
+        FROM menu_versions mv
         JOIN venues v
-          ON v.id = md.venue_id
+          ON v.id = mv.venue_id
         LEFT JOIN users u
-          ON u.id = md.uploaded_by_user_id
+          ON u.id = mv.uploaded_by_user_id
         WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
-        ORDER BY md.created_at DESC
+        ORDER BY COALESCE(mv.published_at, mv.created_at) DESC
       `);
 
-      return res.status(200).json({
-        status: 'ok',
-        documents: result.rows.map((row) => ({
-          ...row,
-          file_size_bytes: Number(row.file_size_bytes),
-          url: `${PUBLIC_PREFIX}/${row.storage_path}`
-        }))
-      });
+      const versionIds = versionsResult.rows.map((row) => row.id);
+
+      const pagesResult = versionIds.length
+        ? await pool.query(
+            `
+            SELECT id, menu_version_id, sort_order, title, file_name, storage_path, mime_type, file_size_bytes, created_at
+            FROM menu_pages
+            WHERE menu_version_id = ANY($1::bigint[])
+            ORDER BY sort_order ASC
+            `,
+            [versionIds]
+          )
+        : { rows: [] };
+
+      const pagesByVersion = new Map();
+      for (const page of pagesResult.rows) {
+        if (!pagesByVersion.has(page.menu_version_id)) pagesByVersion.set(page.menu_version_id, []);
+        pagesByVersion.get(page.menu_version_id).push(toMenuPageResponse(page));
+      }
+
+      const versions = versionsResult.rows.map((row) => ({
+        id: row.id,
+        status: row.status,
+        publishedAt: row.published_at,
+        createdAt: row.created_at,
+        uploadedByName: row.uploaded_by_name || 'Unknown',
+        pages: pagesByVersion.get(row.id) || []
+      }));
+
+      const version = versions.find((v) => v.status === 'published') || null;
+      const history = versions.filter((v) => v.status !== 'published');
+
+      return res.status(200).json({ status: 'ok', version, history });
     } catch (error) {
       console.error('Admin menu list error:', error.message);
 
@@ -2057,17 +2900,22 @@ app.get(
   }
 );
 
+// Adds a new page to the end of the published menu without touching any
+// existing page -- this (not replacing the single menu_documents row) is
+// the fix for uploading a second file wiping out the first.
 app.post(
-  '/api/v1/admin/menu',
+  '/api/v1/admin/menu/pages',
   requireApprovedAdmin,
-  menuUpload.single('menuFile'),
+  menuUpload.single('pageFile'),
   async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         status: 'failed',
-        message: 'A menu file (PDF, JPG, or PNG) is required'
+        message: 'A page file (PDF, JPG, or PNG) is required'
       });
     }
+
+    const title = typeof req.body.title === 'string' && req.body.title.trim() ? req.body.title.trim() : null;
 
     let client;
 
@@ -2080,65 +2928,421 @@ app.post(
       const venueResult = await client.query(
         `SELECT id FROM venues WHERE venue_reference = 'BAR185-MARRICKVILLE'`
       );
-
       const venueId = venueResult.rows[0].id;
 
-      await client.query(
-        `
-        UPDATE menu_documents
-        SET is_active = FALSE, updated_at = NOW()
-        WHERE venue_id = $1 AND is_active = TRUE
-        `,
-        [venueId]
+      const menuVersionId = await getOrCreatePublishedMenuVersion(client, venueId, req.adminUser.id);
+
+      const nextSortOrderResult = await client.query(
+        `SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM menu_pages WHERE menu_version_id = $1`,
+        [menuVersionId]
       );
+      const nextSortOrder = nextSortOrderResult.rows[0].next_sort_order;
 
       const insertResult = await client.query(
         `
-        INSERT INTO menu_documents (
-          venue_id, file_name, storage_path, mime_type, file_size_bytes, uploaded_by_user_id, is_active
+        INSERT INTO menu_pages (
+          menu_version_id, sort_order, title, file_name, storage_path, mime_type, file_size_bytes
         )
-        VALUES ($1, $2, $3, $4, $5, $6, TRUE)
-        RETURNING id, file_name, storage_path, mime_type, file_size_bytes, created_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, sort_order, title, file_name, storage_path, mime_type, file_size_bytes, created_at
         `,
-        [
-          venueId,
-          req.file.originalname,
-          storagePath,
-          req.file.mimetype,
-          req.file.size,
-          req.adminUser.id
-        ]
+        [menuVersionId, nextSortOrder, title, req.file.originalname, storagePath, req.file.mimetype, req.file.size]
       );
 
       await client.query('COMMIT');
 
-      const document = insertResult.rows[0];
-
       return res.status(201).json({
         status: 'ok',
-        message: 'Menu published',
-        document: {
-          ...document,
-          file_size_bytes: Number(document.file_size_bytes),
-          url: `${PUBLIC_PREFIX}/${storagePath}`
-        }
+        message: 'Menu page added',
+        page: toMenuPageResponse(insertResult.rows[0])
       });
     } catch (error) {
       if (client) {
         await client.query('ROLLBACK');
       }
 
-      console.error('Menu upload error:', error.message);
+      console.error('Add menu page error:', error.message);
 
       return res.status(500).json({
         status: 'failed',
-        message: 'Could not publish menu'
+        message: 'Could not add menu page'
       });
     } finally {
       if (client) {
         client.release();
       }
     }
+  }
+);
+
+// Persists a new page order for the published version. Registered before
+// the /:id PATCH below on purpose -- Express matches routes in
+// registration order, and :id would otherwise greedily match the literal
+// path segment "reorder" here.
+app.patch(
+  '/api/v1/admin/menu/pages/reorder',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const { pageIds } = req.body;
+
+    if (!Array.isArray(pageIds) || pageIds.length === 0 || !pageIds.every((id) => Number.isInteger(id))) {
+      return res.status(400).json({ status: 'failed', message: 'pageIds must be a non-empty array of ids' });
+    }
+
+    let client;
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const venueResult = await client.query(
+        `SELECT id FROM venues WHERE venue_reference = 'BAR185-MARRICKVILLE'`
+      );
+      const venueId = venueResult.rows[0].id;
+
+      const versionResult = await client.query(
+        `SELECT id FROM menu_versions WHERE venue_id = $1 AND status = 'published' FOR UPDATE`,
+        [venueId]
+      );
+
+      if (versionResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({ status: 'failed', message: 'No published menu to reorder' });
+      }
+
+      const menuVersionId = versionResult.rows[0].id;
+
+      const currentPages = await client.query(
+        `SELECT id FROM menu_pages WHERE menu_version_id = $1 FOR UPDATE`,
+        [menuVersionId]
+      );
+
+      const currentIds = new Set(currentPages.rows.map((row) => Number(row.id)));
+      const submittedIds = new Set(pageIds);
+
+      const isSameSet =
+        currentIds.size === submittedIds.size && [...currentIds].every((id) => submittedIds.has(id));
+
+      if (!isSameSet) {
+        await client.query('ROLLBACK');
+
+        return res.status(400).json({
+          status: 'failed',
+          message: 'pageIds must list exactly the current pages of the published menu'
+        });
+      }
+
+      // Same large-offset-then-final-values trick as resequenceMenuPages,
+      // just assigning the submitted order instead of the existing one.
+      await client.query(
+        `UPDATE menu_pages SET sort_order = sort_order + 100000 WHERE menu_version_id = $1`,
+        [menuVersionId]
+      );
+
+      for (let index = 0; index < pageIds.length; index += 1) {
+        await client.query(
+          `UPDATE menu_pages SET sort_order = $2, updated_at = NOW() WHERE id = $1`,
+          [pageIds[index], index + 1]
+        );
+      }
+
+      await client.query('COMMIT');
+
+      return res.status(200).json({ status: 'ok', message: 'Menu page order updated' });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Reorder menu pages error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not reorder menu pages'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+// Replaces one page's file and/or renames it -- title and pageFile are
+// each optional (independently), but at least one must be present. Only
+// ever acts on a page belonging to the published version: history is
+// read-only.
+app.patch(
+  '/api/v1/admin/menu/pages/:id',
+  requireApprovedAdmin,
+  menuUpload.single('pageFile'),
+  async (req, res) => {
+    const pageId = Number(req.params.id);
+
+    if (!Number.isInteger(pageId) || pageId < 1) {
+      return res.status(400).json({ status: 'failed', message: 'Invalid menu page id' });
+    }
+
+    const titleProvided = typeof req.body.title === 'string';
+    const title = titleProvided && req.body.title.trim() ? req.body.title.trim() : null;
+
+    if (!req.file && !titleProvided) {
+      return res.status(400).json({
+        status: 'failed',
+        message: 'Provide a replacement file, a new title, or both'
+      });
+    }
+
+    let client;
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const pageResult = await client.query(
+        `
+        SELECT mp.id
+        FROM menu_pages mp
+        JOIN menu_versions mv
+          ON mv.id = mp.menu_version_id
+        WHERE mp.id = $1 AND mv.status = 'published'
+        FOR UPDATE OF mp
+        `,
+        [pageId]
+      );
+
+      if (pageResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Menu page not found'
+        });
+      }
+
+      let fileFields = '';
+      const values = [pageId];
+
+      if (req.file) {
+        const { storagePath } = saveMenuFile(req.file.buffer, req.file.mimetype);
+        fileFields = `, file_name = $${values.length + 1}, storage_path = $${values.length + 2}, mime_type = $${values.length + 3}, file_size_bytes = $${values.length + 4}`;
+        values.push(req.file.originalname, storagePath, req.file.mimetype, req.file.size);
+      }
+
+      let titleField = '';
+      if (titleProvided) {
+        titleField = `, title = $${values.length + 1}`;
+        values.push(title);
+      }
+
+      const updateResult = await client.query(
+        `
+        UPDATE menu_pages
+        SET updated_at = NOW()${fileFields}${titleField}
+        WHERE id = $1
+        RETURNING id, sort_order, title, file_name, storage_path, mime_type, file_size_bytes, created_at
+        `,
+        values
+      );
+
+      await client.query('COMMIT');
+
+      return res.status(200).json({
+        status: 'ok',
+        message: 'Menu page updated',
+        page: toMenuPageResponse(updateResult.rows[0])
+      });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Replace menu page error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not update menu page'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+// Deletes one page from the published version. Deleting the last
+// remaining page is allowed -- the public site already has a graceful
+// "menu not published yet" empty state for a published version with zero
+// pages, so nothing else needs to change to handle that.
+app.delete(
+  '/api/v1/admin/menu/pages/:id',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const pageId = Number(req.params.id);
+
+    if (!Number.isInteger(pageId) || pageId < 1) {
+      return res.status(400).json({ status: 'failed', message: 'Invalid menu page id' });
+    }
+
+    let client;
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const pageResult = await client.query(
+        `
+        SELECT mp.id, mp.menu_version_id
+        FROM menu_pages mp
+        JOIN menu_versions mv
+          ON mv.id = mp.menu_version_id
+        WHERE mp.id = $1 AND mv.status = 'published'
+        FOR UPDATE OF mp
+        `,
+        [pageId]
+      );
+
+      if (pageResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Menu page not found'
+        });
+      }
+
+      const { menu_version_id: menuVersionId } = pageResult.rows[0];
+
+      // Note: the underlying file in backend/uploads/menu is intentionally
+      // left in place, not deleted -- see backend/menu/storage.js. Only the
+      // database row goes.
+      await client.query(`DELETE FROM menu_pages WHERE id = $1`, [pageId]);
+
+      await resequenceMenuPages(client, menuVersionId);
+
+      await client.query('COMMIT');
+
+      return res.status(200).json({ status: 'ok', message: 'Menu page deleted' });
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Delete menu page error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not delete menu page'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  }
+);
+
+// Deletes an entire historical menu version (a past "Previous versions"
+// entry), not just one page -- the currently published version can never
+// be targeted here, on purpose, so this can't be used as a backdoor way to
+// take the live menu down. menu_pages rows for the version are removed by
+// the fk_menu_page_version ON DELETE CASCADE the moment the menu_versions
+// row goes, so only the version row itself needs deleting here.
+//
+// A page's underlying file is only unlinked from disk if no OTHER
+// menu_pages row (in any version, published or archived) still points at
+// the same storage_path -- otherwise deleting this old version would break
+// whatever else is still serving that file. File removal happens only
+// after the database transaction has committed, and is best-effort: if a
+// file somehow can't be removed, the version is still gone from the
+// database and from the admin's list, which is what the admin asked for.
+app.delete(
+  '/api/v1/admin/menu/versions/:versionId',
+  requireApprovedAdmin,
+  async (req, res) => {
+    const versionId = Number(req.params.versionId);
+
+    if (!Number.isInteger(versionId) || versionId < 1) {
+      return res.status(400).json({ status: 'failed', message: 'Invalid menu version id' });
+    }
+
+    let client;
+    let storagePathsToDelete = [];
+
+    try {
+      client = await pool.connect();
+      await client.query('BEGIN');
+
+      const versionResult = await client.query(
+        `SELECT id, status FROM menu_versions WHERE id = $1 FOR UPDATE`,
+        [versionId]
+      );
+
+      if (versionResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+
+        return res.status(404).json({
+          status: 'failed',
+          message: 'Menu version not found'
+        });
+      }
+
+      if (versionResult.rows[0].status === 'published') {
+        await client.query('ROLLBACK');
+
+        return res.status(409).json({
+          status: 'failed',
+          message: 'The current published menu cannot be deleted'
+        });
+      }
+
+      const pagesResult = await client.query(
+        `SELECT storage_path FROM menu_pages WHERE menu_version_id = $1`,
+        [versionId]
+      );
+
+      for (const { storage_path: storagePath } of pagesResult.rows) {
+        const referencedElsewhere = await client.query(
+          `SELECT 1 FROM menu_pages WHERE storage_path = $1 AND menu_version_id != $2 LIMIT 1`,
+          [storagePath, versionId]
+        );
+
+        if (referencedElsewhere.rowCount === 0) {
+          storagePathsToDelete.push(storagePath);
+        }
+      }
+
+      await client.query(`DELETE FROM menu_versions WHERE id = $1`, [versionId]);
+
+      await client.query('COMMIT');
+    } catch (error) {
+      if (client) {
+        await client.query('ROLLBACK');
+      }
+
+      console.error('Delete menu version error:', error.message);
+
+      return res.status(500).json({
+        status: 'failed',
+        message: 'Could not delete menu version'
+      });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+
+    for (const storagePath of storagePathsToDelete) {
+      try {
+        deleteMenuFile(storagePath);
+      } catch (error) {
+        console.error(`Could not remove orphaned menu file ${storagePath}:`, error.message);
+      }
+    }
+
+    return res.status(200).json({ status: 'ok', message: 'Menu version deleted' });
   }
 );
 
