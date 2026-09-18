@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import SectionHead from '../components/SectionHead'
-import PdfViewer from '../components/PdfViewer'
+import MenuViewer from '../components/MenuViewer'
 import VenueImage from '../components/VenueImage'
 import { LoadingState, EmptyState, Alert } from '../components/Feedback'
 import api, { API_ORIGIN } from '../lib/api'
@@ -17,8 +17,7 @@ function Menu() {
       .catch(() => setError('Could not load the menu right now. Please try again shortly.'))
   }, [])
 
-  const menuUrl = menu ? `${API_ORIGIN}${menu.url}` : null
-  const isImage = menu?.mimeType?.startsWith('image/')
+  const pages = menu?.pages.map((page) => ({ ...page, url: `${API_ORIGIN}${page.url}` })) ?? null
 
   return (
     <>
@@ -46,21 +45,7 @@ function Menu() {
 
             {menu && (
               <div className="menu-viewer-wrap">
-                {isImage ? (
-                  <div className="pdf-viewer">
-                    <img src={menuUrl} alt="Bar 185 menu" className="menu-image" />
-                    <div className="pdf-viewer-links">
-                      <a href={menuUrl} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm">
-                        Open Full Size
-                      </a>
-                      <a href={menuUrl} download={menu.fileName} className="btn btn-ghost btn-sm">
-                        Download
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <PdfViewer url={menuUrl} fileName={menu.fileName} />
-                )}
+                <MenuViewer pages={pages} />
               </div>
             )}
           </div>

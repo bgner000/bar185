@@ -1,32 +1,51 @@
 :root {
-  --ink: #0e0c0a;
-  --ink-soft: #16130f;
-  --surface: #1b1712;
-  --surface-raised: #221d17;
-  --border: rgba(201, 161, 90, 0.18);
-  --border-strong: rgba(201, 161, 90, 0.35);
+  /* Layered dark-charcoal surfaces -- deliberately not pure black, so the
+     page reads as depth (page < section < card < raised card) rather than
+     one flat canvas. See site.css/admin.css: every background in the app
+     is one of these four, never a bare #000 or one-off hex. */
+  --ink: #141414;
+  --ink-soft: #1a1a1b;
+  --surface: #1c1c1c;
+  --surface-raised: #222222;
 
-  --text: #efe9df;
-  --text-muted: #b3a897;
-  --text-faint: #7d7364;
+  --border: rgba(201, 161, 90, 0.24);
+  --border-strong: rgba(201, 161, 90, 0.45);
+
+  /* Text tri-level system, chosen to hold >=4.5:1 against every surface
+     above (verified against --ink through --surface-raised, the darkest
+     and lightest of the four). --text-faint is for genuinely secondary
+     copy (hints, timestamps, placeholders) -- it still clears 4.5:1; it is
+     not a "decorative" faint grey. */
+  --text: #f5f5f5;
+  --text-muted: #c7c7c7;
+  --text-faint: #9a9a9a;
 
   --gold: #c9a15a;
   --gold-bright: #e2bd7c;
-  --gold-dim: rgba(201, 161, 90, 0.12);
+  --gold-dim: rgba(201, 161, 90, 0.16);
 
-  --success: #7fb88a;
-  --success-bg: rgba(127, 184, 138, 0.14);
-  --warning: #d9a441;
-  --warning-bg: rgba(217, 164, 65, 0.14);
-  --danger: #d9765f;
-  --danger-bg: rgba(217, 118, 95, 0.14);
-  --info: #7fa9d1;
-  --info-bg: rgba(127, 169, 209, 0.14);
-  --neutral: #a3998a;
-  --neutral-bg: rgba(163, 153, 138, 0.14);
+  /* Status colours always pair with a text label and/or icon in markup --
+     see StatusBadge and Feedback.jsx -- so these are a reinforcing signal,
+     never the only one. Lightened slightly from their original values so
+     each also holds 4.5:1 as plain text, not just as a tinted background. */
+  --success: #8fd39c;
+  --success-bg: rgba(127, 184, 138, 0.16);
+  --warning: #f0b955;
+  --warning-bg: rgba(217, 164, 65, 0.16);
+  --danger: #f0917a;
+  --danger-bg: rgba(217, 118, 95, 0.16);
+  --info: #93bce3;
+  --info-bg: rgba(127, 169, 209, 0.16);
+  --neutral: #b8ada0;
+  --neutral-bg: rgba(163, 153, 138, 0.16);
+
+  /* One shared focus colour, used everywhere a custom focus ring is drawn
+     (see the :focus-visible rules below) -- kept separate from --gold so
+     the two can diverge later without hunting through every component. */
+  --focus: #f2c879;
 
   --serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
-  --sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -34,7 +53,11 @@
   --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 20px 48px rgba(0, 0, 0, 0.45);
 
-  --container: 1180px;
+  /* Global content width + its responsive side padding (mobile / tablet /
+     desktop). Every .container everywhere in the app reads these two --
+     change the site's width or gutters here, not per page. */
+  --container: 1480px;
+  --container-pad: 20px;
 
   color-scheme: dark;
 }
@@ -45,6 +68,37 @@
 
 html {
   scroll-behavior: smooth;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --container-pad: 28px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --container-pad: 40px;
+  }
+}
+
+/* Respect the OS/browser "reduce motion" preference: every transition and
+   animation in the app collapses to near-instant and smooth-scroll turns
+   off, without deleting any of the transition/animation rules themselves
+   (the normal experience is unaffected for everyone else). */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
@@ -120,7 +174,7 @@ ol {
   width: 100%;
   max-width: var(--container);
   margin-inline: auto;
-  padding-inline: 24px;
+  padding-inline: var(--container-pad);
 }
 
 .section {
@@ -136,7 +190,7 @@ ol {
   font-family: var(--sans);
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--gold);
   margin-bottom: 14px;
@@ -298,6 +352,16 @@ ol {
   color: var(--text-muted);
 }
 
+/* Every required field across every form gets a visible marker for free --
+   no per-form JSX changes needed. The native `required` attribute already
+   makes assistive tech announce "required"; this asterisk is the matching
+   signal for sighted users, since HTML5 `required` alone is invisible. */
+.field:has(> [required]) > label::after,
+.field:has(> .field-row [required]) > label::after {
+  content: ' *';
+  color: var(--gold-bright);
+}
+
 .field-hint {
   font-size: 0.8rem;
   color: var(--text-faint);
@@ -338,8 +402,8 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--gold-dim);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(242, 200, 121, 0.28);
 }
 
 textarea {
@@ -474,4 +538,50 @@ select {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* ---------- focus ---------- */
+
+/* One visible focus ring for every interactive element that doesn't draw
+   its own (inputs/selects/textareas keep their bespoke border+glow focus
+   style above, which already meets the same bar). :focus-visible means
+   this only appears for keyboard/programmatic focus, not a stray mouse
+   click, so it never looks like unwanted "flicker" for pointer users. */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: 2.5px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- skip link ---------- */
+
+/* Off-screen until it receives keyboard focus (the very first Tab stop on
+   every page), then becomes a clearly visible, high-contrast control so a
+   keyboard or screen-reader user can jump straight past the header/nav to
+   the page's actual content. See PublicLayout for the matching anchor. */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 12px;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 12px;
+  outline: 2.5px solid var(--focus);
+  outline-offset: 2px;
 }

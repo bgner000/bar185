@@ -125,6 +125,29 @@ export function addDaysToDateKey(dateKey, days) {
   ].join('-')
 }
 
+// Friendly relative label for recent timestamps (notification feed), falling
+// back to a plain date once it's no longer "recent" -- the underlying
+// created_at value itself is never touched, only how it's displayed.
+export function formatRelativeTime(value) {
+  if (!value) return ''
+
+  const then = new Date(value)
+  const diffMs = Date.now() - then.getTime()
+  const diffMinutes = Math.floor(diffMs / 60000)
+
+  if (diffMinutes < 1) return 'Just now'
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+
+  const diffHours = Math.floor(diffMinutes / 60)
+  if (diffHours < 24) return `${diffHours} hr ago`
+
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+
+  return formatDate(value)
+}
+
 export function formatCurrency(value) {
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',

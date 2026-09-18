@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
-import { EmptyState } from '../components/Feedback'
+import { Alert, EmptyState } from '../components/Feedback'
+import { useFocusedCard } from '../lib/useFocusedCard'
 import { formatDateTime } from '../lib/format'
 
 const SORT_OPTIONS = [
@@ -39,12 +40,44 @@ function matchesSearch(request, term) {
   return haystack.includes(term.toLowerCase())
 }
 
-function LargeGroupPanel({ requests, onApprove, onDecline }) {
+function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
   const [tab, setTab] = useState('pending')
   const [historyFilter, setHistoryFilter] = useState('all')
   const [sortBy, setSortBy] = useState('newest')
   const [search, setSearch] = useState('')
   const [confirmTarget, setConfirmTarget] = useState(null) // { request, action: 'approve' | 'decline' }
+  const [focusError, setFocusError] = useState('')
+
+  const { isFocused } = useFocusedCard(focusReference)
+
+  // Deep link from a notification: the full request list is already in
+  // memory (no per-item fetch needed here, unlike bookings), so this only
+  // has to find it and adjust whichever bit of local state -- tab, the
+  // history-only status filter, or a stale search term -- would otherwise
+  // hide it. A request that's simply missing (e.g. a bad/old reference)
+  // shows a small inline message rather than silently doing nothing.
+  useEffect(() => {
+    if (!focusReference) {
+      setFocusError('')
+      return
+    }
+
+    const target = requests.find((r) => r.request_reference === focusReference)
+
+    if (!target) {
+      setFocusError('That large-group request is no longer available.')
+      return
+    }
+
+    setFocusError('')
+    setTab(target.status === 'pending' ? 'pending' : 'history')
+
+    if (target.status !== 'pending') {
+      setHistoryFilter((current) => (current === 'all' || current === target.status ? current : 'all'))
+    }
+
+    setSearch((current) => (matchesSearch(target, current) ? current : ''))
+  }, [focusReference, requests])
 
   const pending = requests.filter((r) => r.status === 'pending')
   const history = requests.filter((r) => r.status !== 'pending')
@@ -74,6 +107,8 @@ function LargeGroupPanel({ requests, onApprove, onDecline }) {
 
   return (
     <div>
+      {focusError && <Alert type="error">{focusError}</Alert>}
+
       <div className="admin-subtabs">
         <button
           type="button"
@@ -129,7 +164,11 @@ function LargeGroupPanel({ requests, onApprove, onDecline }) {
         <div className="admin-card-list">
           {filteredSorted.map((request) => {
             return (
-              <div className="card admin-request-card" key={request.id}>
+              <div
+                className={`card admin-request-card${isFocused(request.request_reference) ? ' admin-focused' : ''}`}
+                key={request.id}
+                data-focus-id={request.request_reference}
+              >
                 <div className="admin-request-head">
                   <div>
                     <h3>{request.request_reference}</h3>

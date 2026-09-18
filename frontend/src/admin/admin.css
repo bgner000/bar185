@@ -30,7 +30,7 @@
 .admin-eyebrow {
   font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--gold);
   margin: 0 0 4px;
@@ -42,6 +42,214 @@
   gap: 12px;
   font-size: 0.92rem;
   color: var(--text-muted);
+}
+
+.admin-header-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+/* ---------- notification bell ---------- */
+
+.notif-bell-wrap {
+  position: relative;
+}
+
+.notif-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.notif-bell:hover {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--gold-bright);
+}
+
+.notif-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gold);
+  color: #1a1408;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+  z-index: 60;
+}
+
+@media (max-width: 520px) {
+  .notif-dropdown {
+    position: fixed;
+    top: 72px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.notif-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.notif-dropdown-header h3 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notif-mark-all {
+  background: transparent;
+  border: none;
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.notif-mark-all:hover:not(:disabled) {
+  color: var(--gold-bright);
+}
+
+.notif-mark-all:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.notif-list {
+  overflow-y: auto;
+}
+
+.notif-list-message {
+  padding: 8px 18px 18px;
+}
+
+.notif-list-message .state-block {
+  padding: 28px 12px;
+}
+
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background: var(--surface);
+}
+
+.notif-item.unread {
+  background: var(--gold-dim);
+}
+
+.notif-item.unread:hover {
+  background: var(--gold-dim);
+  filter: brightness(1.15);
+}
+
+.notif-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.notif-dot-read {
+  background: transparent;
+}
+
+.notif-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notif-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.notif-item.unread .notif-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notif-message {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.42;
+  overflow-wrap: break-word;
+}
+
+.notif-time {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 2px;
 }
 
 .container-full {
@@ -119,9 +327,20 @@
   padding: 32px;
 }
 
+/* Admin is dense functional data, not editorial content -- every heading
+   inside it uses DM Sans by default (overriding the global serif h1-h4
+   rule), except the top-level "Admin Dashboard" title in .admin-header,
+   which sits outside .admin-content. */
+.admin-content h2,
+.admin-content h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+}
+
 .admin-section-title {
-  font-family: var(--serif);
-  font-size: 1.7rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.5rem;
   margin-bottom: 24px;
 }
 
@@ -132,8 +351,9 @@
 }
 
 .admin-summary-value {
-  font-family: var(--serif);
-  font-size: 2.6rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 2.4rem;
   color: var(--gold-bright);
 }
 
@@ -187,6 +407,18 @@
 
 .admin-request-card {
   padding: 22px;
+  transition: background-color 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+/* Temporary "this is the one the notification meant" state -- applied for a
+   few seconds after a deep link scrolls a card into view, then removed so
+   the transition above fades it back to normal. Deliberately restrained:
+   no animation/pulsing, just a warmer border, a faint gold tint, and a soft
+   glow -- never a bright or saturated colour. */
+.admin-focused {
+  border-color: var(--gold);
+  background: var(--gold-dim);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 28px rgba(201, 161, 90, 0.22);
 }
 
 .admin-request-head {
@@ -198,7 +430,9 @@
 }
 
 .admin-request-head h3 {
-  font-size: 1.15rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.1rem;
   margin-bottom: 2px;
 }
 
@@ -268,7 +502,9 @@
 }
 
 .modal-panel h3 {
-  font-size: 1.3rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.2rem;
   margin-bottom: 10px;
 }
 
@@ -405,8 +641,9 @@
 }
 
 .admin-bookings-date {
-  font-family: var(--serif);
-  font-size: 1.15rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.05rem;
   color: var(--gold-bright);
 }
 
@@ -468,22 +705,70 @@
 .admin-menu-current h3,
 .admin-menu-upload h3,
 .admin-menu-history h3 {
-  font-size: 1.1rem;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.05rem;
   margin-bottom: 14px;
 }
 
-.admin-menu-current-details {
+.admin-menu-pages-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-menu-page-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
-.admin-menu-current-details > div {
+.admin-menu-page-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.admin-menu-page-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 0.9rem;
+  gap: 3px;
+  min-width: 180px;
+}
+
+.admin-menu-page-heading {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.admin-menu-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-menu-add-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-menu-title-field {
+  margin: 0;
+  min-width: 200px;
+}
+
+.admin-menu-cancel-add {
+  padding-left: 0;
 }
 
 .admin-menu-file-btn {
@@ -525,11 +810,24 @@
 
 .admin-menu-history-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
+}
+
+.admin-menu-history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-menu-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .admin-menu-history-list li:last-child {

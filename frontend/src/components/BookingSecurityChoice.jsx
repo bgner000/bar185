@@ -164,36 +164,32 @@ function EmailVerificationPanel({ email, verification, onVerified }) {
   )
 }
 
-// No payment provider is connected yet (see backend/payments/), so this
-// panel only ever confirms the phone number is valid -- it never claims a
-// deposit has been paid. Attempting to actually confirm the booking with
-// this method currently returns a clear, honest failure from the backend
-// (see BookingForm's submit handling) rather than a fake success.
+// This panel only ever confirms the phone number is valid -- the actual
+// payment step happens when the booking is submitted (see BookingForm),
+// which redirects to a real Stripe Checkout page for the A$10 charge.
+// Nothing here can mark a deposit paid; only Stripe's webhook can, once
+// payment genuinely succeeds.
 function DepositPanel({ phone }) {
   const phoneValid = isLikelyAuMobile(phone)
 
   return (
     <div>
       <p className="field-hint">
-        Enter your phone number above to continue. A$10 will be charged as a booking deposit,
-        credited toward your bill when you attend, and refunded if you cancel at least 12 hours
-        before your booking.
+        Enter your phone number above, then continue to payment. You'll be taken to Stripe's
+        secure checkout to pay the A$10 deposit — your booking is only confirmed once that
+        payment succeeds.
       </p>
       {!phoneValid && <p className="field-hint">A valid Australian mobile number is required.</p>}
-      <Alert type="info">
-        Card payments aren't connected yet in this preview. Confirming with this option will show
-        a clear message rather than completing a real charge — choose email verification to book
-        today.
-      </Alert>
     </div>
   )
 }
 
 // Lets a customer pick how to secure a standard table booking: the
-// existing free email OTP flow, or a refundable A$10 deposit (structure
-// only for now -- see DepositPanel and backend/payments/). `method` and
-// `verification` are lifted to BookingForm, which is the single source of
-// truth for whether the booking can actually be submitted.
+// existing free email OTP flow, or a refundable A$10 deposit paid through
+// Stripe Checkout (see DepositPanel and BookingForm's submit handling).
+// `method` and `verification` are lifted to BookingForm, which is the
+// single source of truth for whether the booking can actually be
+// submitted.
 function BookingSecurityChoice({ email, phone, method, onMethodChange, verification, onVerified }) {
   return (
     <div className="field verification-block">
@@ -220,7 +216,7 @@ function BookingSecurityChoice({ email, phone, method, onMethodChange, verificat
           <span className="security-method-title">A$10 Booking Deposit</span>
           <span className="security-method-description">
             Secure your booking with a A$10 deposit. The deposit is credited toward your bill when
-            you attend. Refundable when cancelled at least 12 hours before your booking.
+            you attend. Cancel at least 12 hours before your booking for a full refund.
           </span>
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 
 const LINKS = [
@@ -11,6 +11,24 @@ const LINKS = [
 
 function Navbar() {
   const [open, setOpen] = useState(false)
+  const toggleRef = useRef(null)
+
+  // Escape closes the mobile menu from anywhere inside it, and returns
+  // focus to the button that opened it -- a keyboard user never loses
+  // their place, and the menu never becomes a trap.
+  useEffect(() => {
+    if (!open) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        toggleRef.current?.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open])
 
   return (
     <header className="site-header">
@@ -20,6 +38,7 @@ function Navbar() {
         </NavLink>
 
         <nav
+          id="primary-navigation"
           className={`site-nav${open ? ' open' : ''}`}
           aria-label="Primary"
           onClick={() => setOpen(false)}
@@ -41,10 +60,12 @@ function Navbar() {
         </nav>
 
         <button
+          ref={toggleRef}
           type="button"
           className="nav-toggle"
           aria-label={open ? 'Close menu' : 'Open menu'}
           aria-expanded={open}
+          aria-controls="primary-navigation"
           onClick={() => setOpen((value) => !value)}
         >
           <span />

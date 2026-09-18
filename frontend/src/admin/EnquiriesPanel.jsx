@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import StatusBadge from '../components/StatusBadge'
-import { EmptyState } from '../components/Feedback'
+import { Alert, EmptyState } from '../components/Feedback'
+import { useFocusedCard } from '../lib/useFocusedCard'
 import { formatDateTime } from '../lib/format'
 
 const STATUS_OPTIONS = [
@@ -51,10 +52,34 @@ function matchesSearch(enquiry, term) {
   return haystack.includes(term.toLowerCase())
 }
 
-function EnquiriesPanel({ enquiries, updatingReference, onStatusChange }) {
+function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusReference }) {
   const [sortBy, setSortBy] = useState('newest')
   const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [focusError, setFocusError] = useState('')
+
+  const { isFocused } = useFocusedCard(focusReference)
+
+  // Deep link from a notification -- same reasoning as LargeGroupPanel:
+  // the full enquiry list is already in memory, so this only has to find
+  // the match and relax whichever filter/search would otherwise hide it.
+  useEffect(() => {
+    if (!focusReference) {
+      setFocusError('')
+      return
+    }
+
+    const target = enquiries.find((e) => e.enquiry_reference === focusReference)
+
+    if (!target) {
+      setFocusError('That event enquiry is no longer available.')
+      return
+    }
+
+    setFocusError('')
+    setStatusFilter((current) => (current === 'all' || current === target.status ? current : 'all'))
+    setSearch((current) => (matchesSearch(target, current) ? current : ''))
+  }, [focusReference, enquiries])
 
   const visible = useMemo(() => {
     let list = enquiries
@@ -74,6 +99,8 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange }) {
 
   return (
     <div>
+      {focusError && <Alert type="error">{focusError}</Alert>}
+
       <div className="admin-toolbar">
         <span className="admin-toolbar-label">Filter</span>
         <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -109,7 +136,11 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange }) {
         const isUpdating = updatingReference === enquiry.enquiry_reference
 
         return (
-          <div className="card admin-request-card" key={enquiry.id}>
+          <div
+            className={`card admin-request-card${isFocused(enquiry.enquiry_reference) ? ' admin-focused' : ''}`}
+            key={enquiry.id}
+            data-focus-id={enquiry.enquiry_reference}
+          >
             <div className="admin-request-head">
               <div>
                 <h3>{enquiry.enquiry_reference}</h3>
