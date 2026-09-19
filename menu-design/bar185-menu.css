@@ -1,0 +1,281 @@
+:root {
+  --navy: #1c2444;
+  --navy-soft: #2a3260;
+  --cream: #f6efe1;
+  --cream-line: #e4d8bf;
+  --charcoal: #262320;
+  --charcoal-soft: #55504a;
+  --gold: #bd6a2c;
+  --gold-deep: #a1571f;
+}
+
+* { box-sizing: border-box; }
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--cream);
+}
+
+body {
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  color: var(--charcoal);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.page {
+  position: relative;
+  width: 210mm;
+  height: 297mm;
+  background: var(--cream);
+  padding: 20mm 18mm 16mm;
+  overflow: hidden;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+}
+.page:last-child { page-break-after: auto; }
+
+/* ---------- background numeral watermark ---------- */
+.bg-numeral {
+  position: absolute;
+  right: 2mm;
+  bottom: 2mm;
+  font-family: "Fraunces", serif;
+  font-weight: 340;
+  font-size: 100mm;
+  line-height: 0.8;
+  color: var(--navy);
+  opacity: 0.05;
+  letter-spacing: -2mm;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  text-align: center;
+  margin-bottom: 7mm;
+}
+.wordmark {
+  font-family: "Fraunces", serif;
+  font-weight: 480;
+  font-size: 15pt;
+  letter-spacing: 0.12em;
+  color: var(--navy);
+}
+.wordmark__bar { margin-right: 0.35em; }
+.wordmark__num { color: var(--gold-deep); }
+.wordmark__place {
+  margin-top: 1.5mm;
+  font-family: "Inter", sans-serif;
+  font-size: 7.6pt;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--charcoal-soft);
+}
+
+/* ---------- page title ---------- */
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5mm;
+  color: var(--gold);
+}
+.title-glyph { display: flex; color: var(--gold); }
+.page-title {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-weight: 480;
+  font-style: normal;
+  font-size: 34pt;
+  letter-spacing: 0.01em;
+  color: var(--navy);
+  text-align: center;
+}
+.title-rule {
+  width: 26mm;
+  height: 1.1pt;
+  background: var(--gold);
+  margin: 4mm auto 9mm;
+}
+
+/* ---------- page 2 body ---------- */
+.snacks-body {
+  margin: auto 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- section titles (page 2) ---------- */
+.section-title {
+  font-family: "Fraunces", serif;
+  font-weight: 480;
+  font-size: 15pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--navy);
+  text-align: center;
+  margin: 0 0 2mm;
+}
+.section-intro {
+  text-align: center;
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 10.5pt;
+  color: var(--charcoal-soft);
+  margin: 0 0 6mm;
+}
+.section-rule {
+  width: 100%;
+  height: 1pt;
+  background: var(--cream-line);
+  margin: 6mm 0 6mm;
+  position: relative;
+}
+.section-rule::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2.5pt;
+  transform: translateX(-50%);
+  width: 5pt;
+  height: 5pt;
+  background: var(--gold);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* ---------- cocktail grid ---------- */
+.cocktail-grid {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 13mm;
+  margin: auto 0;
+  position: relative;
+  z-index: 1;
+}
+.cocktail-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 11mm;
+}
+.cocktail-divider {
+  width: 1pt;
+  background: var(--cream-line);
+  margin: 2mm 0;
+}
+
+.menu-item { break-inside: avoid; }
+.item-name {
+  margin: 0 0 2mm;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 13.5pt;
+  letter-spacing: 0.01em;
+  color: var(--charcoal);
+}
+.item-desc {
+  margin: 0;
+  font-family: "Fraunces", serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 10.8pt;
+  line-height: 1.48;
+  color: var(--charcoal-soft);
+  text-wrap: pretty;
+}
+.section-intro { text-wrap: pretty; }
+.tag {
+  display: inline-block;
+  margin-left: 2mm;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 7.5pt;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+  vertical-align: middle;
+}
+
+/* ---------- onigiri grid (page 2) ---------- */
+.onigiri-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 14mm;
+  row-gap: 9mm;
+  margin-bottom: 2mm;
+}
+
+/* ---------- plates ---------- */
+.plates {
+  display: flex;
+  flex-direction: column;
+  gap: 8mm;
+}
+.plate-item { break-inside: avoid; }
+.plate-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6mm;
+}
+.plate-row .item-name { margin: 0; }
+.price {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  font-size: 13pt;
+  color: var(--gold-deep);
+  white-space: nowrap;
+}
+.plate-item .item-desc { margin-top: 1mm; }
+
+/* ---------- footers ---------- */
+.page-footer {
+  margin-top: auto;
+  padding-top: 6mm;
+}
+.footer-rule {
+  width: 100%;
+  height: 1pt;
+  background: var(--navy);
+  opacity: 0.18;
+  margin-bottom: 4mm;
+}
+.footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: "Inter", sans-serif;
+  font-size: 7.6pt;
+  letter-spacing: 0.06em;
+  color: var(--charcoal-soft);
+}
+.footer-row--center { justify-content: center; }
+.footer-mark {
+  font-family: "Fraunces", serif;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 8pt;
+  color: var(--navy);
+}
+.allergen-note {
+  text-align: center;
+  font-family: "Inter", sans-serif;
+  font-style: italic;
+  font-size: 8pt;
+  line-height: 1.5;
+  color: var(--charcoal-soft);
+  max-width: 140mm;
+  margin: 0 auto 5mm;
+}

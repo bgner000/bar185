@@ -1,0 +1,929 @@
+/* ==========================================================
+   ADMIN TOKEN ISOLATION
+   ==========================================================
+   The 2026 public-site redesign (see index.css) repoints nearly every
+   shared design token to a new light, editorial palette. The admin
+   dashboard was explicitly out of scope for that redesign, so every
+   token any admin rule (in this file, or a shared component rule like
+   .btn/.card/.field/input that admin also uses) reads is re-declared
+   here to its exact pre-redesign value. Everything inside .admin-shell
+   therefore renders exactly as it did before the public redesign,
+   regardless of what index.css's :root now says. If a future admin
+   change needs a token that isn't listed here, add it here rather than
+   assuming it inherits the public value. */
+.admin-shell {
+  --ink: #141414;
+  --ink-soft: #1a1a1b;
+  --surface: #1c1c1c;
+  --surface-raised: #222222;
+
+  --border: rgba(201, 161, 90, 0.24);
+  --border-strong: rgba(201, 161, 90, 0.45);
+
+  --text: #f5f5f5;
+  --text-muted: #c7c7c7;
+  --text-faint: #9a9a9a;
+
+  --gold: #c9a15a;
+  --gold-bright: #e2bd7c;
+  --gold-dim: rgba(201, 161, 90, 0.16);
+
+  --success: #8fd39c;
+  --success-bg: rgba(127, 184, 138, 0.16);
+  --warning: #f0b955;
+  --warning-bg: rgba(217, 164, 65, 0.16);
+  --danger: #f0917a;
+  --danger-bg: rgba(217, 118, 95, 0.16);
+  --info: #93bce3;
+  --info-bg: rgba(127, 169, 209, 0.16);
+  --neutral: #b8ada0;
+  --neutral-bg: rgba(163, 153, 138, 0.16);
+
+  --focus: #f2c879;
+
+  --serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 20px 48px rgba(0, 0, 0, 0.45);
+
+  /* Semantic tokens the shared component rules (.btn-primary, .card,
+     input focus, the required-field asterisk, ...) read instead of
+     hardcoding a colour -- see the matching comment in index.css. */
+  --accent: var(--gold);
+  --accent-bright: var(--gold-bright);
+  --accent-deep: var(--gold);
+  --panel: var(--surface);
+  --panel-raised: var(--surface-raised);
+  --field-bg: var(--ink-soft);
+  --field-focus-shadow: rgba(242, 200, 121, 0.28);
+
+  color-scheme: dark;
+}
+
+/* .btn-primary was a two-tone gradient with a brightness-shift hover, not
+   a flat colour swap -- the shared rule (a flat fill, for the redesigned
+   public buttons) doesn't reproduce that, so it's restated here exactly
+   as it was. */
+.admin-shell .btn-primary {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #1a1408;
+  border-color: transparent;
+}
+
+.admin-shell .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  filter: brightness(1.06);
+}
+
+.admin-shell .btn-secondary:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+/* The select-arrow SVG is a literal colour baked into a data URI, so it
+   can't read a CSS custom property -- restated here with the old gold
+   hex rather than the redesign's wine hex. */
+.admin-shell select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23c9a15a'%3E%3Cpath d='M5.5 7.5l4.5 4.5 4.5-4.5' stroke='%23c9a15a' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.admin-shell {
+  min-height: 100svh;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+}
+
+.admin-shell-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.admin-header h1 {
+  font-family: var(--serif);
+  font-size: 1.8rem;
+  margin: 0;
+}
+
+.admin-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 4px;
+}
+
+.admin-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+}
+
+.admin-header-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+/* ---------- notification bell ---------- */
+
+.notif-bell-wrap {
+  position: relative;
+}
+
+.notif-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.notif-bell:hover {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--gold-bright);
+}
+
+.notif-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gold);
+  color: #1a1408;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
+.notif-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden;
+  z-index: 60;
+}
+
+@media (max-width: 520px) {
+  .notif-dropdown {
+    position: fixed;
+    top: 72px;
+    left: 16px;
+    right: 16px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.notif-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.notif-dropdown-header h3 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notif-mark-all {
+  background: transparent;
+  border: none;
+  color: var(--gold);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.notif-mark-all:hover:not(:disabled) {
+  color: var(--gold-bright);
+}
+
+.notif-mark-all:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.notif-list {
+  overflow-y: auto;
+}
+
+.notif-list-message {
+  padding: 8px 18px 18px;
+}
+
+.notif-list-message .state-block {
+  padding: 28px 12px;
+}
+
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 18px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background: var(--surface);
+}
+
+.notif-item.unread {
+  background: var(--gold-dim);
+}
+
+.notif-item.unread:hover {
+  background: var(--gold-dim);
+  filter: brightness(1.15);
+}
+
+.notif-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.notif-dot-read {
+  background: transparent;
+}
+
+.notif-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notif-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.notif-item.unread .notif-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notif-message {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.42;
+  overflow-wrap: break-word;
+}
+
+.notif-time {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.container-full {
+  padding: 16px 32px 0;
+}
+
+.admin-body {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100svh - 77px);
+}
+
+@media (max-width: 780px) {
+  .admin-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-nav {
+  border-right: 1px solid var(--border);
+  padding: 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (max-width: 780px) {
+  .admin-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+  }
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-align: left;
+  padding: 12px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.admin-nav-item:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.admin-nav-item.active {
+  background: var(--gold-dim);
+  color: var(--gold-bright);
+}
+
+.admin-nav-count {
+  background: var(--gold);
+  color: #1a1408;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.admin-content {
+  padding: 32px;
+}
+
+/* Admin is dense functional data, not editorial content -- every heading
+   inside it uses DM Sans by default (overriding the global serif h1-h4
+   rule), except the top-level "Admin Dashboard" title in .admin-header,
+   which sits outside .admin-content. */
+.admin-content h2,
+.admin-content h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+}
+
+.admin-section-title {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.5rem;
+  margin-bottom: 24px;
+}
+
+.admin-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-summary-value {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 2.4rem;
+  color: var(--gold-bright);
+}
+
+.admin-summary-label {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+/* ---------- table ---------- */
+
+.admin-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.admin-table th {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--surface);
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------- request / enquiry cards ---------- */
+
+.admin-card-list {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-request-card {
+  padding: 22px;
+  transition: background-color 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease;
+}
+
+/* Temporary "this is the one the notification meant" state -- applied for a
+   few seconds after a deep link scrolls a card into view, then removed so
+   the transition above fades it back to normal. Deliberately restrained:
+   no animation/pulsing, just a warmer border, a faint gold tint, and a soft
+   glow -- never a bright or saturated colour. */
+.admin-focused {
+  border-color: var(--gold);
+  background: var(--gold-dim);
+  box-shadow: 0 0 0 1px var(--gold), 0 0 28px rgba(201, 161, 90, 0.22);
+}
+
+.admin-request-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-request-head h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.1rem;
+  margin-bottom: 2px;
+}
+
+.admin-request-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+
+.admin-request-details > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-detail-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.admin-request-message {
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.admin-request-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-status-field {
+  margin-bottom: 0;
+  max-width: 280px;
+}
+
+/* ---------- confirm dialog / modal ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(8, 6, 4, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-panel {
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  padding: 26px;
+}
+
+.modal-panel h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+}
+
+.modal-description {
+  margin-bottom: 16px;
+}
+
+.modal-reason-field {
+  margin-top: 4px;
+}
+
+.modal-error {
+  margin-top: 4px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-danger-solid {
+  background: var(--danger);
+  color: #2a120c;
+}
+
+.btn-danger-solid:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.modal-detail-list {
+  display: grid;
+  gap: 8px;
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+
+.modal-detail-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+
+.modal-detail-list dt,
+.modal-detail-list span:first-child {
+  color: var(--text-faint);
+}
+
+/* ---------- sub-tabs (pending / history) ---------- */
+
+.admin-subtabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.admin-subtab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-subtab:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.admin-subtab.active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #1a1408;
+}
+
+.admin-subtab-count {
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
+/* ---------- sort / filter bar ---------- */
+
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.admin-toolbar select,
+.admin-toolbar input[type='search'] {
+  width: auto;
+  min-width: 150px;
+  padding: 9px 12px;
+  font-size: 0.86rem;
+}
+
+.admin-toolbar input[type='search'] {
+  min-width: 200px;
+  flex: 1;
+}
+
+.admin-toolbar-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+
+/* ---------- bookings: date head / controls ---------- */
+
+.admin-bookings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-section-title-tight {
+  margin-bottom: 4px;
+}
+
+.admin-bookings-date {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--gold-bright);
+}
+
+.admin-date-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-date-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  color: var(--gold);
+  background: var(--ink-soft);
+  cursor: pointer;
+}
+
+.admin-date-input input[type='date'] {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  width: auto;
+  cursor: pointer;
+}
+
+.admin-refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.admin-request-actions-wrap {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.admin-noshow-hint {
+  width: 100%;
+  margin-top: 2px;
+}
+
+/* ---------- menu admin panel ---------- */
+
+.admin-menu-current,
+.admin-menu-upload,
+.admin-menu-history {
+  margin-bottom: 20px;
+}
+
+.admin-menu-current h3,
+.admin-menu-upload h3,
+.admin-menu-history h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 14px;
+}
+
+.admin-menu-pages-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-menu-page-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-menu-page-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.admin-menu-page-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 180px;
+}
+
+.admin-menu-page-heading {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.admin-menu-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-menu-add-form {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-menu-title-field {
+  margin: 0;
+  min-width: 200px;
+}
+
+.admin-menu-cancel-add {
+  padding-left: 0;
+}
+
+.admin-menu-file-btn {
+  display: inline-flex;
+  cursor: pointer;
+  position: relative;
+}
+
+.admin-menu-file-error {
+  color: var(--danger);
+  font-size: 0.86rem;
+  margin-top: 10px;
+}
+
+.admin-menu-file-preview {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  background: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+
+.admin-menu-file-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+.admin-menu-history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-menu-history-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.admin-menu-history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-menu-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-menu-history-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}

@@ -1,0 +1,1322 @@
+.site-main {
+  flex: 1;
+}
+
+/* Deliberately narrower than the site's normal 1680px container -- not a
+   leftover mistake, a composed choice for the booking page specifically
+   (see .book-layout below): a form this size doesn't need to stretch
+   across a 1920px monitor, so the extra canvas goes into the two-column
+   composition and generous gutters around it instead. */
+.container.narrow {
+  max-width: 1240px;
+}
+
+.book-layout {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: clamp(40px, 5vw, 80px);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .book-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.book-intro-photo {
+  aspect-ratio: 4 / 3;
+  margin-top: 28px;
+  box-shadow: var(--shadow-soft);
+}
+
+.book-intro-detail {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.book-intro-detail h3 {
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+
+.book-intro-detail p {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.manage-booking-section {
+  margin-top: clamp(24px, 3vw, 40px);
+  padding-top: clamp(20px, 2.5vw, 28px);
+  border-top: 1px solid var(--border);
+}
+
+.manage-booking-section .meta {
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* ---------- venue photography ---------- */
+
+.venue-image {
+  display: block;
+  overflow: hidden;
+  background: var(--stone-soft);
+}
+
+.venue-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+/* ---------- header / nav ---------- */
+/* A light, translucent bar rather than a dark charcoal one -- it reads as
+   its own surface over any photo scrolling underneath without needing to
+   compete with the hero for "who owns dark mode here". */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(250, 247, 241, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 84px;
+}
+
+.brand {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 1.7rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.brand span {
+  color: var(--wine);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(28px, 2.4vw, 44px);
+}
+
+.site-nav a {
+  position: relative;
+  text-decoration: none;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  padding-block: 4px;
+  transition: color 0.2s ease;
+}
+
+/* Current/hovered page is never shown by colour alone -- an underline
+   (and heavier weight for the active page) carries the same information
+   for anyone who can't distinguish the muted/wine colour difference. */
+.site-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.2s ease;
+}
+
+.site-nav a:hover,
+.site-nav a.active {
+  color: var(--wine);
+}
+
+.site-nav a.active {
+  font-weight: 700;
+}
+
+.site-nav a:hover::after,
+.site-nav a.active::after {
+  transform: scaleX(1);
+}
+
+/* .btn-primary already sets the wine fill + --text-inverse foreground
+   (~9.3:1 contrast) that every primary button uses -- but both this
+   component's own `.site-nav a { color: var(--text-muted) }` and the
+   old `.nav-cta` rule outrank it on specificity, so the colour must be
+   restated here (not redefined) to actually win. Previously this fell
+   through to --text-muted / --text, leaving the nav's "Book a Table"
+   at ~1.5:1 contrast against its wine background. */
+.site-nav a.nav-cta {
+  padding: 9px 18px;
+  color: var(--text-inverse);
+}
+
+.site-nav a.nav-cta::after {
+  content: none;
+}
+
+.nav-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.nav-toggle span {
+  width: 22px;
+  height: 1.5px;
+  background: var(--text);
+}
+
+@media (max-width: 860px) {
+  .nav-toggle {
+    display: flex;
+  }
+
+  .site-nav {
+    position: absolute;
+    top: 84px;
+    left: 0;
+    right: 0;
+    background: var(--paper);
+    border-bottom: 1px solid var(--border);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 8px 0;
+    display: none;
+  }
+
+  .site-nav.open {
+    display: flex;
+  }
+
+  .site-nav a {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .site-nav a.nav-cta {
+    margin: 14px 24px;
+    text-align: center;
+  }
+}
+
+/* ---------- hero ---------- */
+/* Full-bleed venue photography with copy anchored toward the lower third
+   rather than centred in the middle of the frame -- a deliberate,
+   photograph-led composition rather than a floating text block. */
+
+.hero {
+  position: relative;
+  background: var(--ink);
+  overflow: hidden;
+}
+
+.hero-photo-section {
+  display: flex;
+  align-items: flex-end;
+  min-height: clamp(560px, 86vh, 860px);
+  padding-block: clamp(48px, 8vw, 88px);
+}
+
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero-photo-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(0deg, rgba(20, 16, 12, 0.92) 0%, rgba(20, 16, 12, 0.35) 42%, rgba(20, 16, 12, 0.08) 68%),
+    linear-gradient(90deg, rgba(20, 16, 12, 0.5) 0%, rgba(20, 16, 12, 0.05) 45%);
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 2;
+  color: var(--text-inverse);
+  --focus: var(--text-inverse);
+}
+
+.hero-inner h1 {
+  color: var(--text-inverse);
+  max-width: 16ch;
+}
+
+.hero-location {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: var(--text-inverse-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hero-location::before {
+  content: '';
+  width: 22px;
+  height: 1px;
+  background: var(--brass);
+}
+
+.hero-lede {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  max-width: 42ch;
+  color: var(--text-inverse-muted);
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.events-hero {
+  min-height: clamp(400px, 56vh, 560px);
+}
+
+.events-hero .hero-photo-section {
+  min-height: clamp(400px, 56vh, 560px);
+}
+
+/* ---------- editorial image / text compositions ---------- */
+/* A deliberately uneven pairing -- unequal columns, and the text column
+   is nudged with its own top offset so the two halves don't align like a
+   generic 50/50 component. .editorial-split--reverse swaps which side
+   the photograph sits on. */
+
+.editorial-split {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: clamp(32px, 5vw, 96px);
+  align-items: center;
+}
+
+.editorial-split--reverse {
+  grid-template-columns: 0.85fr 1.15fr;
+}
+
+.editorial-split--reverse > .editorial-split-photo {
+  order: 2;
+}
+
+.editorial-split-text {
+  margin-top: clamp(0px, 4vw, 36px);
+}
+
+.editorial-split--reverse .editorial-split-text {
+  margin-top: 0;
+  margin-bottom: clamp(0px, 4vw, 36px);
+}
+
+@media (max-width: 900px) {
+  .editorial-split,
+  .editorial-split--reverse {
+    grid-template-columns: 1fr;
+  }
+
+  .editorial-split--reverse > .editorial-split-photo {
+    order: 0;
+  }
+
+  .editorial-split-text {
+    margin-top: 28px;
+    margin-bottom: 0;
+  }
+}
+
+.editorial-split-photo {
+  aspect-ratio: 4 / 3;
+  box-shadow: var(--shadow-soft);
+}
+
+.intro-photo {
+  aspect-ratio: 5 / 4;
+  box-shadow: var(--shadow-soft);
+}
+
+/* Pulls a photo up over the section above it on desktop, so two stacked
+   editorial-split sections read as one continuous, overlapping story
+   rather than two cleanly separated blocks with a hard seam between
+   them. Left as normal flow on narrow screens, where a real overlap
+   would just look like a layout bug. */
+@media (min-width: 901px) {
+  .editorial-split-photo--overlap {
+    margin-top: -72px;
+  }
+}
+
+/* ---------- home gallery ---------- */
+/* Three unequal tiles rather than three identically shaped ones -- one
+   tall portrait, two smaller landscapes offset from each other, square
+   corners throughout. */
+
+.home-gallery-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 20px;
+  height: 560px;
+}
+
+.home-gallery-tile-tall {
+  grid-row: 1 / span 2;
+}
+
+.home-gallery-grid .home-gallery-tile:nth-child(3) {
+  margin-top: 20px;
+  height: calc(100% - 20px);
+}
+
+@media (max-width: 760px) {
+  .home-gallery-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    height: auto;
+  }
+
+  .home-gallery-grid .home-gallery-tile,
+  .home-gallery-grid .home-gallery-tile:nth-child(3) {
+    aspect-ratio: 4 / 3;
+    height: auto;
+    margin-top: 0;
+  }
+
+  .home-gallery-tile-tall {
+    grid-row: auto;
+    aspect-ratio: 3 / 4;
+  }
+}
+
+.section-cta {
+  margin-top: 40px;
+}
+
+/* ---------- editorial drinks/food menu list ---------- */
+/* A printed-menu treatment: name, a dotted leader, and a price, with the
+   description underneath in a muted line -- rows separated by a rule,
+   not boxes. */
+
+.menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-block: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-row:first-child {
+  padding-top: 0;
+}
+
+.menu-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.menu-row-name {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: 1.2rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.menu-row-leader {
+  flex: 1;
+  border-bottom: 1px dotted var(--border-strong);
+  transform: translateY(-4px);
+}
+
+.menu-row-price {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--wine);
+  white-space: nowrap;
+}
+
+.menu-row-description {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.menu-row-category {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass-text);
+}
+
+/* ---------- editorial event listing ---------- */
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 24px;
+  align-items: start;
+  padding-block: 26px;
+  border-bottom: 1px solid var(--border);
+}
+
+.event-row:first-child {
+  padding-top: 0;
+}
+
+.event-row-date {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: 1.3rem;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.event-row-date span {
+  display: block;
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.event-row-title {
+  margin-bottom: 4px;
+}
+
+.event-row-description {
+  margin: 0 0 8px;
+  font-size: 0.94rem;
+}
+
+/* Plain typographic category, not a pill/badge -- matches the same
+   restrained treatment as .menu-row-category rather than a UI-chip. */
+.event-row-category {
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass-text);
+}
+
+@media (max-width: 640px) {
+  .event-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* The compact variant used in the home page's events preview, paired
+   with a photograph -- tighter rows so one, two, or three events all
+   read as a considered list rather than a section stretched to fill
+   space it doesn't have content for. */
+.event-list--compact .event-row {
+  grid-template-columns: 96px 1fr;
+  padding-block: 18px;
+  gap: 16px;
+}
+
+.event-list--compact .event-row-date {
+  font-size: 1.05rem;
+}
+
+/* ---------- final CTA (editorial, photographic) ---------- */
+
+.cta-editorial {
+  position: relative;
+  background: var(--ink);
+  overflow: hidden;
+}
+
+.cta-editorial-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.cta-editorial-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(100deg, rgba(20, 16, 12, 0.92) 0%, rgba(20, 16, 12, 0.72) 55%, rgba(20, 16, 12, 0.5) 100%);
+}
+
+.cta-editorial-inner {
+  position: relative;
+  z-index: 2;
+  max-width: 560px;
+  padding-block: clamp(72px, 12vw, 128px);
+  color: var(--text-inverse);
+  --focus: var(--text-inverse);
+}
+
+.cta-editorial-inner .display {
+  color: var(--text-inverse);
+  margin-bottom: 18px;
+}
+
+.cta-editorial-inner .lede {
+  color: var(--text-inverse-muted);
+  margin-bottom: 28px;
+}
+
+.cta-editorial-inner .btn-primary {
+  background: var(--text-inverse);
+  color: var(--ink);
+  border-color: var(--text-inverse);
+}
+
+.cta-editorial-inner .btn-primary:hover:not(:disabled) {
+  background: var(--brass);
+  border-color: var(--brass);
+}
+
+/* ---------- menu page ---------- */
+
+.booking-type-tabs {
+  display: flex;
+  border: 1px solid var(--border-strong);
+  margin-bottom: 32px;
+}
+
+.booking-type-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 15px 20px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.booking-type-tab:not(:last-child) {
+  border-right: 1px solid var(--border-strong);
+}
+
+.booking-type-tab:hover {
+  color: var(--text);
+}
+
+.booking-type-tab.active {
+  background: var(--text);
+  color: var(--paper);
+}
+
+/* ---------- public menu viewer (PDF/image) ---------- */
+
+.menu-banner-photo {
+  height: clamp(200px, 26vw, 320px);
+}
+
+/* The published menu is the point of this page, so its surrounding
+   container is deliberately much wider than a normal reading measure --
+   860px/620px previously left the actual document small in a sea of
+   cream on anything wider than a laptop. */
+.menu-page-container {
+  max-width: 1320px;
+}
+
+.menu-viewer-frame {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  padding: clamp(20px, 3vw, 40px);
+}
+
+.menu-viewer-wrap {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.pdf-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.pdf-viewer-canvas,
+.menu-image {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  background: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.pdf-viewer-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pdf-viewer-page-count {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  min-width: 110px;
+  text-align: center;
+}
+
+.pdf-viewer-links {
+  display: flex;
+  gap: 12px;
+}
+
+/* ---------- booking calendar ---------- */
+
+.booking-calendar {
+  border: 1px solid var(--border);
+  padding: 18px;
+  background: var(--paper);
+}
+
+.booking-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.calendar-nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.calendar-nav-btn:hover:not(:disabled) {
+  border-color: var(--wine);
+  color: var(--wine);
+}
+
+.calendar-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.booking-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.booking-calendar-weekdays {
+  margin-bottom: 6px;
+}
+
+.booking-calendar-weekdays span {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.calendar-day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.calendar-day-blank {
+  cursor: default;
+}
+
+.calendar-day:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.calendar-day.selected {
+  background: var(--wine);
+  border-color: var(--wine);
+  color: var(--text-inverse);
+  font-weight: 700;
+}
+
+.calendar-day.disabled {
+  color: var(--text-faint);
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.calendar-day-dot {
+  position: absolute;
+  bottom: 5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--brass);
+}
+
+.calendar-day.selected .calendar-day-dot {
+  background: var(--text-inverse);
+}
+
+/* ---------- compact time picker ---------- */
+
+.time-picker {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  max-width: 260px;
+}
+
+.time-picker-trigger {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  border-right: none;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease;
+}
+
+.time-picker-trigger svg {
+  color: var(--wine);
+  flex-shrink: 0;
+}
+
+.time-picker-trigger:hover {
+  border-color: var(--wine);
+}
+
+.time-picker-steppers {
+  display: flex;
+  flex-direction: column;
+  width: 34px;
+}
+
+.time-picker-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  color: var(--wine);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.time-picker-step:first-child {
+  border-bottom: none;
+}
+
+.time-picker-step:hover:not(:disabled) {
+  background: var(--stone-soft);
+}
+
+.time-picker-step:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.time-picker-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lift);
+  padding: 6px;
+}
+
+.time-picker-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 0.92rem;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.time-picker-option:hover {
+  background: var(--stone-soft);
+}
+
+.time-picker-option.selected {
+  background: var(--wine);
+  color: var(--text-inverse);
+}
+
+.time-picker-option-seats {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.time-picker-option.selected .time-picker-option-seats {
+  color: var(--text-inverse-muted);
+}
+
+/* ---------- book page ---------- */
+
+.book-tabs {
+  margin-bottom: 28px;
+}
+
+.book-panel {
+  margin-bottom: 40px;
+}
+
+.booking-result p {
+  margin-bottom: 20px;
+}
+
+.booking-result-details {
+  display: grid;
+  gap: 8px;
+  background: var(--stone-soft);
+  border: 1px solid var(--border);
+  padding: 16px 18px;
+  margin: 0 0 20px;
+}
+
+.booking-result-details div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+
+.booking-result-details span:first-child {
+  color: var(--text-muted);
+}
+
+.manage-booking {
+  margin-top: 8px;
+}
+
+.verification-block {
+  background: var(--stone-soft);
+  border: 1px solid var(--border);
+  padding: 18px;
+}
+
+.verification-channel-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.verification-code-entry {
+  margin-top: 4px;
+}
+
+.verification-code-row {
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.verification-code-input {
+  width: 140px;
+  flex: none;
+  font-family: var(--sans);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-align: center;
+}
+
+.verification-resend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.security-method-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 10px 0 16px;
+}
+
+@media (max-width: 640px) {
+  .security-method-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.security-method-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.security-method-option:hover {
+  border-color: var(--wine);
+}
+
+.security-method-option.selected {
+  border-color: var(--wine);
+  background: var(--stone-soft);
+}
+
+.security-method-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.security-method-description {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.manage-booking h3 {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 1.15rem;
+  margin-bottom: 4px;
+}
+
+.manage-booking .btn {
+  margin-top: 6px;
+}
+
+/* ---------- events page ---------- */
+
+.events-feature-photo {
+  aspect-ratio: 3 / 4;
+  max-height: 680px;
+  box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 860px) {
+  .events-feature-photo {
+    max-width: 320px;
+    max-height: 400px;
+    margin-inline: auto;
+  }
+}
+
+.enquiry-photo {
+  aspect-ratio: 4 / 3;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-soft);
+}
+
+/* ---------- about page ---------- */
+
+.about-sign-photo {
+  aspect-ratio: 3 / 4;
+  max-height: 720px;
+  box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 860px) {
+  .about-sign-photo {
+    max-width: 320px;
+    margin-inline: auto;
+  }
+}
+
+.about-banner-photo {
+  height: clamp(240px, 34vw, 380px);
+}
+
+/* ---------- contact page ---------- */
+
+.contact-grid {
+  display: grid;
+  grid-template-columns: 0.7fr 1fr 1fr;
+  gap: clamp(32px, 4vw, 64px);
+  align-items: start;
+}
+
+.contact-photo {
+  aspect-ratio: 3 / 4;
+  box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 1100px) {
+  .contact-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .contact-photo {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .contact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contact-details p {
+  margin-bottom: 4px;
+}
+
+.contact-details-block {
+  padding-block: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.contact-details-block:first-child {
+  padding-top: 0;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.hours-list {
+  list-style: none;
+  margin: 0;
+}
+
+.hours-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.hours-list li:last-child {
+  border-bottom: none;
+}
+
+/* ---------- footer ---------- */
+/* A dark, atmospheric close to every page. The wordmark, address and
+   opening hours are one authored block (hours get real visual weight,
+   not a fourth equal column); navigation and email follow in their own,
+   deliberately unequal row. */
+
+.site-footer {
+  background: var(--ink);
+  color: var(--text-inverse);
+  padding-top: 64px;
+}
+
+.footer-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 40px;
+}
+
+.footer-brand {
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  margin-bottom: 8px;
+}
+
+.footer-location {
+  color: var(--text-inverse-muted);
+  margin: 0;
+}
+
+.footer-hours {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 1.3rem;
+  color: var(--text-inverse);
+  margin: 0;
+  text-align: right;
+}
+
+.footer-hours span {
+  display: block;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-inverse-faint);
+  margin-top: 4px;
+}
+
+.footer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding-block: 32px;
+  border-top: 1px solid var(--border-inverse);
+}
+
+.site-footer h4 {
+  font-family: var(--sans);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-inverse-faint);
+  margin: 0 20px 0 0;
+  display: inline;
+}
+
+.site-footer p {
+  color: var(--text-inverse-muted);
+}
+
+.site-footer a {
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  color: var(--brass);
+}
+
+.footer-links--inline {
+  list-style: none;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 20px;
+}
+
+.footer-links--inline a {
+  text-decoration: none;
+  color: var(--text-inverse-muted);
+  font-size: 0.92rem;
+}
+
+.footer-links--inline a:hover {
+  color: var(--brass);
+}
+
+.footer-email {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+@media (max-width: 700px) {
+  .footer-identity {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .footer-hours {
+    text-align: left;
+  }
+
+  .footer-grid {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .site-footer h4 {
+    display: block;
+    margin-bottom: 10px;
+  }
+}
+
+.footer-bottom {
+  border-top: 1px solid var(--border-inverse);
+  padding-block: 20px;
+  font-size: 0.82rem;
+  color: var(--text-inverse-faint);
+}
+
+.footer-bottom p {
+  margin: 0;
+  color: inherit;
+}

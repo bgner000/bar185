@@ -1,111 +1,828 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* ---------- public site palette ----------
+     A light, warm base (stone/parchment) is the default canvas -- dark
+     charcoal is reserved for a handful of deliberately atmospheric
+     moments (the hero, the footer, one gallery beat per page), not the
+     whole site. Wine is the one brand accent color; brass is used even
+     more sparingly, for small marks (rules, dates) rather than buttons
+     or borders everywhere. See .admin-shell in admin.css, which
+     re-declares every token below back to this project's *original*
+     dark-charcoal-and-gold values -- the admin dashboard is deliberately
+     unaffected by any of this. */
+  --ink: #1c1712;
+  --ink-soft: #262019;
+  --stone: #f1ebe0;
+  --stone-soft: #e7dcc9;
+  --paper: #faf7f1;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --text: #262019;
+  --text-muted: #5c5245;
+  /* Darker than it might first look right at -- #837a6c reads fine by eye
+     but only clears ~3.6:1 against --stone, short of the 4.5:1 AA text
+     needs. This value clears >=4.8:1 against both --stone and
+     --stone-soft. */
+  --text-faint: #655c4e;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* --brass alone (#a07f4f) only clears ~3.1:1 against --stone -- fine
+     for the thin decorative rule it's mostly used for, not for text.
+     --brass-text is the same family, darkened until it clears >=4.5:1
+     against every light surface (--stone, --stone-soft, --paper), for
+     the handful of places brass labels small text on a light section
+     (e.g. .menu-row-category). Dark sections keep using --brass itself,
+     which already clears >=4.5:1 against --ink.
+  */
+  --brass-text: #6f5733;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  --text-inverse: #f4eee1;
+  --text-inverse-muted: #cabfae;
+  --text-inverse-faint: #a89b89;
+
+  --wine: #6d2531;
+  --wine-deep: #4c1a22;
+  --wine-bright: #8f4552;
+
+  --brass: #a07f4f;
+  --brass-dim: rgba(160, 127, 79, 0.28);
+
+  /* Semantic indirection so shared component rules (.btn, .card, focus
+     rings, form accents, ...) can be reused as-is by .admin-shell, which
+     re-points --accent/--accent-deep/--panel/--panel-raised back to its
+     original gold-on-charcoal values instead of this redesign's
+     wine-on-paper ones. Nothing below should reference --wine or --paper
+     directly outside of these two lines and the .admin-shell block in
+     admin.css. */
+  --accent: var(--wine);
+  --accent-bright: var(--wine-bright);
+  --accent-deep: var(--wine-deep);
+  --panel: var(--paper);
+  --panel-raised: var(--paper);
+  --field-bg: #fff;
+  --field-focus-shadow: rgba(109, 37, 49, 0.16);
+
+  --border: rgba(38, 32, 25, 0.16);
+  --border-strong: rgba(38, 32, 25, 0.3);
+  --border-inverse: rgba(244, 238, 225, 0.2);
+  --border-inverse-strong: rgba(244, 238, 225, 0.36);
+
+  /* Status colours are deliberately darker/more saturated than a typical
+     "light pastel on dark" scheme -- alerts and forms on this site sit on
+     light paper surfaces by default, so these need to hold contrast
+     against --paper, not --ink. */
+  --success: #2f6b45;
+  --success-bg: #e3ede2;
+  --warning: #8a5a12;
+  --warning-bg: #f3e6cd;
+  --danger: #8a2f28;
+  --danger-bg: #f2e0dc;
+  --info: #2d5a73;
+  --info-bg: #dfe9ee;
+  --neutral: #5c5245;
+  --neutral-bg: #eae3d6;
+
+  /* A dark focus ring on the light default surface; sections that switch
+     to a dark backdrop (.section-dark, .hero, .site-footer) reassert a
+     light one -- see those rules below. Either way it's never the brand
+     wine colour, so it can't be mistaken for a hover/active accent. */
+  --focus: #262019;
+
+  --serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Square-cornered by default -- the "floating SaaS card" look this
+     redesign is moving away from came largely from generous radii used
+     everywhere. --radius-lg is kept slightly softer for a handful of
+     genuinely rounded things (the mobile nav sheet, notification pill),
+     not for every panel. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  /* Restrained on purpose -- .card-raised (forms) and photo shadows both
+     read this token, and a tall, soft, spread-out shadow is exactly what
+     made a boundary read as "floating SaaS card" rather than a bounded
+     panel. --shadow-lift stays more pronounced for things that are
+     genuinely floating above the page (dropdown menus, modals). */
+  --shadow-soft: 0 6px 18px rgba(28, 23, 18, 0.1);
+  --shadow-lift: 0 24px 56px rgba(28, 23, 18, 0.22);
+
+  /* Global content width + its responsive side padding (mobile / tablet /
+     desktop). Every .container everywhere in the app reads these two --
+     change the site's width or gutters here, not per page. 1680 (rather
+     than a narrower cap) is deliberate: at 1920-2048px, a 40px gutter
+     either side still leaves ~1600px of working composition, instead of
+     the page reading as a small centred column on a large monitor. */
+  --container: 1680px;
+  --container-pad: 20px;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --container-pad: 28px;
   }
 }
 
-@media (prefers-color-scheme: dark) {
+@media (min-width: 1024px) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    --container-pad: 40px;
+  }
+}
+
+/* Respect the OS/browser "reduce motion" preference: every transition and
+   animation in the app collapses to near-instant and smooth-scroll turns
+   off, without deleting any of the transition/animation rules themselves
+   (the normal experience is unaffected for everyone else). */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
 body {
   margin: 0;
+  background: var(--stone);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+img {
+  max-width: 100%;
+  display: block;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+a {
+  color: inherit;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+
+button {
+  font-family: inherit;
 }
-p {
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 0.5em;
+  letter-spacing: 0.01em;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+h1 {
+  font-size: clamp(2.6rem, 5vw, 4.4rem);
+  line-height: 1.05;
+}
+
+h2 {
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  line-height: 1.12;
+}
+
+h3 {
+  font-size: 1.4rem;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0 0 1em;
+  color: var(--text-muted);
+  max-width: 62ch;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- layout helpers ---------- */
+
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding-inline: var(--container-pad);
+}
+
+.section {
+  padding-block: clamp(56px, 8vw, 104px);
+}
+
+.section-tight {
+  padding-block: clamp(40px, 6vw, 64px);
+}
+
+/* A deliberately dark, atmospheric section -- used sparingly (see the
+   redesign brief: the site's base is light, dark is the exception, not
+   the default canvas). Anything placed inside needs the *-inverse text
+   tokens, not the light-surface defaults. */
+.section-dark {
+  background: var(--ink);
+  color: var(--text-inverse);
+  --focus: var(--text-inverse);
+}
+
+.section-dark h1,
+.section-dark h2,
+.section-dark h3,
+.section-dark h4 {
+  color: var(--text-inverse);
+}
+
+.section-dark p {
+  color: var(--text-inverse-muted);
+}
+
+.section-tint {
+  background: var(--stone-soft);
+}
+
+/* A small utility label -- a date, a location, a category, a tag -- not
+   a mandatory banner above every heading. Restrained on purpose: no
+   heavy tracking, no loud colour, so it reads as information rather than
+   decoration. */
+.meta {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.section-dark .meta {
+  color: var(--text-inverse-faint);
+}
+
+.meta-accent {
+  color: var(--wine);
+}
+
+.section-dark .meta-accent {
+  color: var(--brass);
+}
+
+/* One large, deliberately oversized editorial statement -- used once or
+   twice a page at most, not on every section heading (that repetition is
+   exactly the "everything is huge" pattern this redesign removes). */
+.display {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: clamp(2.8rem, 7vw, 6rem);
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.lede {
+  font-size: 1.15rem;
+  line-height: 1.65;
+  color: var(--text-muted);
+  max-width: 46ch;
+}
+
+.section-dark .lede {
+  color: var(--text-inverse-muted);
+}
+
+/* A single wide editorial line -- the non-grid replacement for "three
+   equal facts in three equal boxes". Folds a few short facts into one
+   sentence instead of restating each as its own heading+card. Italic and
+   serif are used sparingly on purpose (see the typography brief): this
+   is one of very few places on the site that reaches for it. */
+.statement {
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-style: italic;
+  font-weight: 400;
+  font-size: clamp(1.25rem, 2.1vw, 1.6rem);
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 58ch;
+}
+
+.section-dark .statement {
+  color: var(--text-inverse);
+}
+
+.section-head {
+  max-width: 640px;
+  margin-bottom: 36px;
+}
+
+.section-head p {
+  font-size: 1.05rem;
+}
+
+.grid {
+  display: grid;
+  gap: 24px;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 900px) {
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* One larger lead idea beside a short, rule-separated stack of smaller
+   supporting ones -- the deliberately uneven alternative to "four equal
+   facts in four equal columns". */
+.principles {
+  display: grid;
+  grid-template-columns: 1fr 0.85fr;
+  gap: clamp(40px, 5vw, 88px);
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .principles {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lede--tight {
+  margin-bottom: 28px;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  padding: 14px 28px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.section-dark .btn-primary {
+  background: var(--text-inverse);
+  color: var(--ink);
+  border-color: var(--text-inverse);
+}
+
+.section-dark .btn-primary:hover:not(:disabled) {
+  background: var(--brass);
+  border-color: var(--brass);
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+}
+
+.section-dark .btn-secondary {
+  border-color: var(--border-inverse-strong);
+  color: var(--text-inverse);
+}
+
+.section-dark .btn-secondary:hover:not(:disabled) {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  padding: 10px 4px;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--accent-bright);
+}
+
+.section-dark .btn-ghost {
+  color: var(--text-inverse-muted);
+}
+
+.section-dark .btn-ghost:hover:not(:disabled) {
+  color: var(--brass);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-sm {
+  padding: 9px 18px;
+  font-size: 0.8rem;
+}
+
+.btn-danger-outline {
+  background: transparent;
+  border-color: rgba(138, 47, 40, 0.45);
+  color: var(--danger);
+}
+
+.btn-danger-outline:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+
+/* An editorial text link -- "VIEW THE MENU ->" -- used where a boxed
+   button would be one too many on the page. Underline is the persistent
+   affordance (not colour alone); the arrow shifts slightly on hover as
+   the only motion. */
+.link-editorial {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--text);
+  border-bottom: 1px solid var(--border-strong);
+  padding-bottom: 2px;
+}
+
+.link-editorial:hover {
+  color: var(--wine);
+  border-color: var(--wine);
+}
+
+.link-editorial .arrow {
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.link-editorial:hover .arrow {
+  transform: translateX(3px);
+}
+
+.section-dark .link-editorial {
+  color: var(--text-inverse);
+  border-color: var(--border-inverse-strong);
+}
+
+.section-dark .link-editorial:hover {
+  color: var(--brass);
+  border-color: var(--brass);
+}
+
+/* ---------- cards ---------- */
+/* Used only where a genuinely bounded panel is needed (forms, the
+   enquiry form, confirmation results) -- not as the default container
+   for editorial content. Flat, square-cornered paper, not a floating
+   dark tile. */
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 28px;
+}
+
+.card-raised {
+  background: var(--panel-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+/* ---------- forms ---------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Every required field across every form gets a visible marker for free --
+   no per-form JSX changes needed. The native `required` attribute already
+   makes assistive tech announce "required"; this asterisk is the matching
+   signal for sighted users, since HTML5 `required` alone is invisible. */
+.field:has(> [required]) > label::after,
+.field:has(> .field-row [required]) > label::after {
+  content: ' *';
+  color: var(--accent);
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 560px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+input,
+select,
+textarea {
+  font-family: var(--sans);
+  font-size: 0.98rem;
+  color: var(--text);
+  background: var(--field-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--field-focus-shadow);
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236d2531'%3E%3Cpath d='M5.5 7.5l4.5 4.5 4.5-4.5' stroke='%236d2531' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 38px;
+}
+
+/* ---------- badges ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.badge-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.badge-info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.badge-neutral {
+  background: var(--neutral-bg);
+  color: var(--neutral);
+}
+
+/* ---------- alerts / feedback ---------- */
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  font-size: 0.92rem;
+  border: 1px solid transparent;
+  margin-bottom: 18px;
+}
+
+.alert-success {
+  background: var(--success-bg);
+  border-color: rgba(47, 107, 69, 0.25);
+  color: var(--success);
+}
+
+.alert-error {
+  background: var(--danger-bg);
+  border-color: rgba(138, 47, 40, 0.25);
+  color: var(--danger);
+}
+
+.alert-info {
+  background: var(--info-bg);
+  border-color: rgba(45, 90, 115, 0.25);
+  color: var(--info);
+}
+
+.alert strong {
+  color: inherit;
+}
+
+.alert p {
+  margin: 0;
+  color: inherit;
+}
+
+/* ---------- state placeholders ---------- */
+
+.state-block {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-faint);
+}
+
+.state-block .spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  margin: 0 auto 16px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- focus ---------- */
+
+/* One visible focus ring for every interactive element that doesn't draw
+   its own (inputs/selects/textareas keep their bespoke border+glow focus
+   style above, which already meets the same bar). :focus-visible means
+   this only appears for keyboard/programmatic focus, not a stray mouse
+   click, so it never looks like unwanted "flicker" for pointer users.
+   --focus itself flips between a dark and a light ring depending on
+   which kind of section it's drawn in -- see .section-dark above. */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[tabindex]:focus-visible,
+summary:focus-visible {
+  outline: 2.5px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- skip link ---------- */
+
+/* Off-screen until it receives keyboard focus (the very first Tab stop on
+   every page), then becomes a clearly visible, high-contrast control so a
+   keyboard or screen-reader user can jump straight past the header/nav to
+   the page's actual content. See PublicLayout for the matching anchor. */
+.skip-link {
+  position: absolute;
+  top: -48px;
+  left: 12px;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--text-inverse);
+  border: 1px solid var(--border-inverse-strong);
+  border-radius: var(--radius-sm);
+  padding: 12px 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 12px;
+  outline: 2.5px solid var(--text-inverse);
+  outline-offset: 2px;
 }

@@ -62,6 +62,49 @@ VALUES (
 ON CONFLICT (venue_reference) DO NOTHING;
 
 -- =========================================================
+-- 2b. VENUE OPENING HOURS
+-- =========================================================
+-- The authoritative source of truth for Bar 185's operating hours.
+-- day_of_week follows Postgres's own EXTRACT(DOW) convention so the
+-- booking-slot generator can look a date's hours up directly with
+-- `EXTRACT(DOW FROM date)`: 0 = Sunday ... 6 = Saturday.
+--
+-- closes_at may be earlier than opens_at (Thursday/Friday/Saturday below)
+-- to represent closing after midnight -- the generator interprets
+-- closes_at <= opens_at as "closes on the following calendar day".
+
+INSERT INTO venue_hours (
+  venue_id,
+  day_of_week,
+  opens_at,
+  closes_at,
+  is_closed
+)
+SELECT
+  v.id,
+  hours.day_of_week,
+  hours.opens_at,
+  hours.closes_at,
+  hours.is_closed
+FROM venues v
+CROSS JOIN (
+  VALUES
+    (0, TIME '14:00', TIME '22:00', FALSE), -- Sunday    2:00pm - 10:00pm
+    (1, NULL,         NULL,         TRUE),  -- Monday    Closed
+    (2, TIME '16:00', TIME '23:00', FALSE), -- Tuesday   4:00pm - 11:00pm
+    (3, TIME '16:00', TIME '23:00', FALSE), -- Wednesday 4:00pm - 11:00pm
+    (4, TIME '16:00', TIME '00:00', FALSE), -- Thursday  4:00pm - Midnight
+    (5, TIME '15:00', TIME '01:00', FALSE), -- Friday    3:00pm - 1:00am
+    (6, TIME '14:00', TIME '01:00', FALSE)  -- Saturday  2:00pm - 1:00am
+) AS hours (day_of_week, opens_at, closes_at, is_closed)
+WHERE v.venue_reference = 'BAR185-MARRICKVILLE'
+ON CONFLICT (venue_id, day_of_week) DO UPDATE SET
+  opens_at = EXCLUDED.opens_at,
+  closes_at = EXCLUDED.closes_at,
+  is_closed = EXCLUDED.is_closed,
+  updated_at = NOW();
+
+-- =========================================================
 -- 3. DEMO BOOKING SLOTS
 -- =========================================================
 
@@ -269,3 +312,22 @@ ON CONFLICT (venue_id, table_code) DO UPDATE SET
   updated_at = NOW();
 
 COMMIT;
+
+-- =========================================================
+-- 7. ROLLING DEMO BOOKING SLOTS
+-- =========================================================
+-- The dated slots in section 3 become stale once their date passes, and a
+-- real Bar 185 booking day needs a full 15-minute start-time sequence
+-- (5:00pm-9:00pm), not just one or two fixed blocks.
+--
+-- That generator now lives in backend/scripts/generate-booking-slots.js
+-- instead of here, because it needs to stay in sync with two values that
+-- already exist in booking_rules (standard_booking_duration_minutes and
+-- booking_window_days) rather than hardcoding a duration or window that
+-- could silently drift from the real rules. Keeping one canonical copy of
+-- that query avoids this file and the script quietly diverging over time.
+--
+-- Run it with:  npm run generate:slots   (from backend/)
+-- It is idempotent (ON CONFLICT DO NOTHING on booking_slots' existing
+-- UNIQUE (venue_id, starts_at, ends_at) constraint), so re-running it is
+-- always safe and only ever adds slots that don't already exist.
