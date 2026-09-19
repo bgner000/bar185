@@ -1,3 +1,96 @@
+/* ==========================================================
+   ADMIN TOKEN ISOLATION
+   ==========================================================
+   The 2026 public-site redesign (see index.css) repoints nearly every
+   shared design token to a new light, editorial palette. The admin
+   dashboard was explicitly out of scope for that redesign, so every
+   token any admin rule (in this file, or a shared component rule like
+   .btn/.card/.field/input that admin also uses) reads is re-declared
+   here to its exact pre-redesign value. Everything inside .admin-shell
+   therefore renders exactly as it did before the public redesign,
+   regardless of what index.css's :root now says. If a future admin
+   change needs a token that isn't listed here, add it here rather than
+   assuming it inherits the public value. */
+.admin-shell {
+  --ink: #141414;
+  --ink-soft: #1a1a1b;
+  --surface: #1c1c1c;
+  --surface-raised: #222222;
+
+  --border: rgba(201, 161, 90, 0.24);
+  --border-strong: rgba(201, 161, 90, 0.45);
+
+  --text: #f5f5f5;
+  --text-muted: #c7c7c7;
+  --text-faint: #9a9a9a;
+
+  --gold: #c9a15a;
+  --gold-bright: #e2bd7c;
+  --gold-dim: rgba(201, 161, 90, 0.16);
+
+  --success: #8fd39c;
+  --success-bg: rgba(127, 184, 138, 0.16);
+  --warning: #f0b955;
+  --warning-bg: rgba(217, 164, 65, 0.16);
+  --danger: #f0917a;
+  --danger-bg: rgba(217, 118, 95, 0.16);
+  --info: #93bce3;
+  --info-bg: rgba(127, 169, 209, 0.16);
+  --neutral: #b8ada0;
+  --neutral-bg: rgba(163, 153, 138, 0.16);
+
+  --focus: #f2c879;
+
+  --serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 20px 48px rgba(0, 0, 0, 0.45);
+
+  /* Semantic tokens the shared component rules (.btn-primary, .card,
+     input focus, the required-field asterisk, ...) read instead of
+     hardcoding a colour -- see the matching comment in index.css. */
+  --accent: var(--gold);
+  --accent-bright: var(--gold-bright);
+  --accent-deep: var(--gold);
+  --panel: var(--surface);
+  --panel-raised: var(--surface-raised);
+  --field-bg: var(--ink-soft);
+  --field-focus-shadow: rgba(242, 200, 121, 0.28);
+
+  color-scheme: dark;
+}
+
+/* .btn-primary was a two-tone gradient with a brightness-shift hover, not
+   a flat colour swap -- the shared rule (a flat fill, for the redesigned
+   public buttons) doesn't reproduce that, so it's restated here exactly
+   as it was. */
+.admin-shell .btn-primary {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  color: #1a1408;
+  border-color: transparent;
+}
+
+.admin-shell .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--gold-bright), var(--gold));
+  filter: brightness(1.06);
+}
+
+.admin-shell .btn-secondary:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+/* The select-arrow SVG is a literal colour baked into a data URI, so it
+   can't read a CSS custom property -- restated here with the old gold
+   hex rather than the redesign's wine hex. */
+.admin-shell select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23c9a15a'%3E%3Cpath d='M5.5 7.5l4.5 4.5 4.5-4.5' stroke='%23c9a15a' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
 .admin-shell {
   min-height: 100svh;
   background: var(--ink);

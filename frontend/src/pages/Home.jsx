@@ -5,7 +5,7 @@ import VenueImage from '../components/VenueImage'
 import { venueImages } from '../data/venueImages'
 import { menuCategories } from '../data/menu'
 import api from '../lib/api'
-import { formatDate, formatCurrency } from '../lib/format'
+import { formatDate, formatTime, formatCurrency } from '../lib/format'
 
 const featuredItems = [
   { ...menuCategories[0].items[0], category: 'Cocktails' },
@@ -37,65 +37,55 @@ function Home() {
         <div className="hero-photo-overlay" />
 
         <div className="container hero-inner">
-          <span className="eyebrow">Marrickville · Inner West Sydney</span>
+          <span className="hero-location">Marrickville · Inner West Sydney</span>
           <h1>
             Good drinks, <br />
             good company.
           </h1>
           <p className="hero-lede">
-            Bar 185 is a neighbourhood bar built for long evenings — handcrafted cocktails,
-            a considered wine list, and small plates made to share.
+            A neighbourhood bar built for long evenings — handcrafted cocktails, a considered
+            wine list, and small plates made to share.
           </p>
           <div className="hero-actions">
             <Link to="/book" className="btn btn-primary">
               Book a Table
             </Link>
-            <Link to="/events" className="btn btn-secondary">
-              See Events
+            <Link to="/events" className="link-editorial">
+              See what&rsquo;s on <span className="arrow">→</span>
             </Link>
           </div>
         </div>
       </section>
 
       <section className="section">
-        <div className="container intro-grid">
-          <div>
-            <span className="eyebrow">Welcome</span>
-            <h2>A bar rooted in the Inner West</h2>
-            <p>
-              From weeknight wines to weekend celebrations, Bar 185 brings together local
-              produce, small-batch spirits, and an easy atmosphere. Pull up a stool at the bar
-              or settle in with friends — we keep a table ready either way.
-            </p>
-            <Link to="/about" className="btn btn-ghost">
-              Our story →
-            </Link>
-          </div>
-
-          <VenueImage image={venueImages.mainBarFront} className="intro-photo" />
-        </div>
-
         <div className="container">
-          <div className="grid grid-3 feature-cards">
-            <div className="card">
-              <h3>Handcrafted</h3>
-              <p>Cocktails built from scratch with house syrups and fresh citrus.</p>
-            </div>
-            <div className="card">
-              <h3>Local First</h3>
-              <p>NSW wine and Inner West beer on rotation, poured by people who know them.</p>
-            </div>
-            <div className="card">
-              <h3>Private Events</h3>
-              <p>Semi-private space for birthdays, work drinks, and celebrations.</p>
+          <div className="editorial-split">
+            <VenueImage image={venueImages.mainBarFront} className="editorial-split-photo" />
+
+            <div className="editorial-split-text">
+              <h2>A bar rooted in the Inner West</h2>
+              <p>
+                From weeknight wines to weekend celebrations, Bar 185 brings together local
+                produce, small-batch spirits, and an easy atmosphere. Pull up a stool at the bar
+                or settle in with friends — we keep a table ready either way.
+              </p>
+              <Link to="/about" className="link-editorial">
+                Our story <span className="arrow">→</span>
+              </Link>
             </div>
           </div>
+
+          <p className="statement">
+            Cocktails built from scratch, NSW wine and Inner West beer on rotation, and a
+            semi-private space upstairs for birthdays, work drinks and celebrations — the
+            everyday version of a good night out.
+          </p>
         </div>
       </section>
 
-      <section className="section section-tint">
+      <section className="section section-dark">
         <div className="container">
-          <SectionHead eyebrow="A Night at Bar 185" title="Inside Bar 185">
+          <SectionHead title="Inside Bar 185">
             A look at the room — atmosphere, live music, and the space upstairs.
           </SectionHead>
 
@@ -111,66 +101,80 @@ function Home() {
       </section>
 
       <section className="section">
-        <div className="container">
-          <SectionHead eyebrow="On the Menu" title="A taste of what's pouring">
-            A short list from our cocktails, wine and small plates menu.
-          </SectionHead>
-
-          <div className="grid grid-4 menu-preview-grid">
-            {featuredItems.map((item) => (
-              <div className="card menu-preview-card" key={item.name}>
-                <span className="eyebrow">{item.category}</span>
-                <h3>{item.name}</h3>
-                <p>{item.description}</p>
-                <span className="menu-price">{formatCurrency(item.price)}</span>
-              </div>
-            ))}
+        <div className="container editorial-split editorial-split--reverse">
+          <div className="editorial-split-text">
+            <h2>A taste of what&rsquo;s pouring</h2>
+            <p>
+              A short list from our cocktails, wine and small plates menu — the full list changes
+              with the season.
+            </p>
+            <Link to="/menu" className="link-editorial">
+              View full menu <span className="arrow">→</span>
+            </Link>
           </div>
 
-          <div className="section-cta">
-            <Link to="/menu" className="btn btn-secondary">
-              View Full Menu
-            </Link>
+          <div className="menu-list">
+            {featuredItems.map((item) => (
+              <div className="menu-row" key={item.name}>
+                <span className="menu-row-category">{item.category}</span>
+                <div className="menu-row-head">
+                  <span className="menu-row-name">{item.name}</span>
+                  <span className="menu-row-leader" aria-hidden="true" />
+                  <span className="menu-row-price">{formatCurrency(item.price)}</span>
+                </div>
+                <p className="menu-row-description">{item.description}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {events.length > 0 && (
         <section className="section section-tint">
-          <div className="container">
-            <SectionHead eyebrow="What's On" title="Upcoming at Bar 185">
-              Live music, tastings, and nights worth putting in the diary.
-            </SectionHead>
+          <div className="container editorial-split">
+            <VenueImage image={venueImages.liveMusicVertical} className="editorial-split-photo" />
 
-            <div className="grid grid-3">
-              {events.map((event) => (
-                <div className="card event-preview-card" key={event.eventReference}>
-                  <span className="badge badge-info">{event.tag || 'Event'}</span>
-                  <h3>{event.title}</h3>
-                  {event.description && <p>{event.description}</p>}
-                  <span className="event-date">{formatDate(event.startsAt)}</span>
-                </div>
-              ))}
-            </div>
+            <div className="editorial-split-text">
+              <h2>Upcoming at Bar 185</h2>
+              <p>Live music, tastings, and nights worth putting in the diary.</p>
 
-            <div className="section-cta">
-              <Link to="/events" className="btn btn-secondary">
-                View All Events
+              <div className="event-list event-list--compact">
+                {events.map((event) => (
+                  <div className="event-row" key={event.eventReference}>
+                    <div className="event-row-date">
+                      {formatDate(event.startsAt)}
+                      <span>{formatTime(event.startsAt)}</span>
+                    </div>
+                    <div>
+                      <h3 className="event-row-title">{event.title}</h3>
+                      {event.description && <p className="event-row-description">{event.description}</p>}
+                      {event.tag && <span className="event-row-category">{event.tag}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <Link to="/events" className="link-editorial">
+                View all events <span className="arrow">→</span>
               </Link>
             </div>
           </div>
         </section>
       )}
 
-      <section className="section cta-band">
-        <div className="container cta-band-inner">
-          <div>
-            <h2>Planning something bigger?</h2>
-            <p>Private functions, engagements, and corporate nights — we'll help you plan it.</p>
+      <section className="cta-editorial">
+        <VenueImage image={venueImages.audioMixingConsole} className="cta-editorial-photo" objectPosition="50% 30%" />
+        <div className="cta-editorial-overlay" />
+        <div className="container">
+          <div className="cta-editorial-inner">
+            <h2 className="display">Planning something bigger?</h2>
+            <p className="lede">
+              Private functions, engagements, and corporate nights — we&rsquo;ll help you plan it.
+            </p>
+            <Link to="/events#enquiry" className="btn btn-primary">
+              Enquire About an Event
+            </Link>
           </div>
-          <Link to="/book" className="btn btn-primary">
-            Enquire About an Event
-          </Link>
         </div>
       </section>
     </>
