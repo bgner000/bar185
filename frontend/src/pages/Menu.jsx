@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import SectionHead from '../components/SectionHead'
 import MenuViewer from '../components/MenuViewer'
 import VenueImage from '../components/VenueImage'
 import { LoadingState, EmptyState, Alert } from '../components/Feedback'
@@ -30,9 +29,12 @@ function Menu() {
 
       <section className="section">
         <div className="container menu-page-container">
-          <SectionHead eyebrow="Menu" title="Our Menu" center>
-            Cocktails, wine, beer, and small plates — updated by our team as the season changes.
-          </SectionHead>
+          <div className="section-head">
+            <h1>Our Menu</h1>
+            <p className="lede">
+              Cocktails, wine, beer, and small plates — updated by our team as the season changes.
+            </p>
+          </div>
 
           <div className="menu-viewer-frame">
             {error && <Alert type="error">{error}</Alert>}

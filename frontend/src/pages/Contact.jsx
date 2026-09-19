@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import SectionHead from '../components/SectionHead'
 import { LoadingState } from '../components/Feedback'
+import VenueImage from '../components/VenueImage'
+import { venueImages } from '../data/venueImages'
 import api from '../lib/api'
 import { formatHourLabel, weekdayName } from '../lib/format'
 
@@ -27,28 +28,27 @@ function Contact() {
   return (
     <section className="section">
       <div className="container contact-grid">
-        <div>
-          <SectionHead eyebrow="Contact" title="Get in Touch">
-            Details below are indicative for this demo and easy to update once the venue goes
-            live.
-          </SectionHead>
+        <VenueImage image={venueImages.exteriorSign} className="contact-photo" />
 
-          <div className="card contact-card">
-            <h3>Visit</h3>
-            <p>
-              185 Illawarra Road
-              <br />
-              Marrickville NSW 2204
+        <div className="contact-details">
+          <div className="section-head">
+            <h1>Get in Touch</h1>
+            <p className="lede">
+              Details below are indicative for this demo and easy to update once the venue goes
+              live.
             </p>
           </div>
 
-          <div className="card contact-card">
+          <div className="contact-details-block">
+            <h3>Visit</h3>
+            <p>185 Illawarra Road</p>
+            <p>Marrickville NSW 2204</p>
+          </div>
+
+          <div className="contact-details-block">
             <h3>Reach Us</h3>
-            <p>
-              Phone: (02) 9555 0185
-              <br />
-              Email: hello@bar185.com.au
-            </p>
+            <p>Phone: (02) 9555 0185</p>
+            <p>Email: hello@bar185.com.au</p>
           </div>
 
           <div className="contact-actions">
@@ -61,7 +61,7 @@ function Contact() {
           </div>
         </div>
 
-        <div className="card card-raised hours-card">
+        <div>
           <h3>Opening Hours</h3>
 
           {!hoursByDay && !error && <LoadingState label="Loading hours…" />}
