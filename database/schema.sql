@@ -1156,3 +1156,52 @@ BEGIN
 
   END IF;
 END $$;
+
+
+-- =========================================================
+-- 18. MIGRATION: CUSTOMER-SELECTED CONFIRMATION DELIVERY
+-- =========================================================
+-- The customer now chooses ONE channel (email or SMS) for their booking
+-- confirmation instead of always receiving both. The choice is stored on
+-- the booking (and on a large-group request, so it carries over to the
+-- booking created when staff approve it).
+--
+-- confirmation_delivery_status / confirmation_sent_at double as the
+-- duplicate-send guard: backend/notifications claims a booking by moving
+-- it from NULL to 'pending' in a single conditional UPDATE, so a retried
+-- Stripe webhook (or any other repeat call) can never send the same
+-- confirmation twice. A delivery failure is recorded here and in
+-- notification_jobs -- it never changes the booking's own status.
+--
+-- Purely additive and safe to re-run: existing rows keep NULL in every
+-- new column, and NULL confirmation_method falls back to email.
+
+DO $$
+BEGIN
+  CREATE TYPE confirmation_method AS ENUM (
+    'email',
+    'sms'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE confirmation_delivery_status AS ENUM (
+    'pending',
+    'sent',
+    'failed'
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE bookings
+  ADD COLUMN IF NOT EXISTS confirmation_method confirmation_method,
+  ADD COLUMN IF NOT EXISTS confirmation_delivery_status confirmation_delivery_status,
+  ADD COLUMN IF NOT EXISTS confirmation_sent_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS confirmation_delivery_error TEXT;
+
+ALTER TABLE large_group_booking_requests
+  ADD COLUMN IF NOT EXISTS confirmation_method confirmation_method;

@@ -95,7 +95,29 @@ function notifyEventEnquiry(enquiry) {
   });
 }
 
+// A booking IS confirmed, but the customer's chosen confirmation (email or
+// SMS) could not be delivered -- staff may want to contact them directly.
+// Deduplicated per booking by the same ON CONFLICT rule as every other
+// admin notification.
+function notifyConfirmationDeliveryFailed(booking, method, error) {
+  const channel = method === 'sms' ? 'SMS' : 'email';
+
+  return createNotification({
+    type: 'confirmation_delivery_failed',
+    title: 'Confirmation not delivered',
+    message: `The ${channel} confirmation for ${booking.booking_reference} (${booking.customer_name}) could not be sent. The booking is still confirmed.`,
+    entityType: 'booking',
+    entityId: booking.id,
+    metadata: {
+      bookingReference: booking.booking_reference,
+      confirmationMethod: method,
+      error: error ? String(error).slice(0, 300) : null,
+    },
+  });
+}
+
 module.exports = {
+  notifyConfirmationDeliveryFailed,
   notifyNewBooking,
   notifyBookingCancelled,
   notifyLargeGroupRequest,

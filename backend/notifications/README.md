@@ -19,6 +19,33 @@ Both are wrapped behind a small provider interface
 another provider later without touching `notifications/index.js` or
 `server.js`.
 
+## Booking confirmations: one channel, chosen by the customer
+
+The booking form asks "How would you like to receive your confirmation?"
+(Email or SMS). The choice is stored as `confirmation_method` on the
+booking (and on a large-group request, then copied onto the booking when
+staff approve it). `notifyBookingConfirmed` then:
+
+1. **Claims** the booking with one conditional `UPDATE` (only a booking
+   whose `status = 'confirmed'` and whose `confirmation_delivery_status`
+   is still `NULL`). A retried Stripe webhook or any repeat call finds
+   nothing to claim, so the same confirmation is never sent twice.
+2. **Sends through the chosen channel only.** Older rows with no method
+   fall back to email. SMS with no valid Australian mobile is recorded as
+   a failure rather than silently switching to email.
+3. **Records the outcome** on the booking (`confirmation_delivery_status`
+   `sent`/`failed`, `confirmation_sent_at`, `confirmation_delivery_error`)
+   and in `notification_jobs`. A failure also creates a
+   "Confirmation not delivered" admin notification.
+
+It never changes `bookings.status`: a failed email/SMS leaves a valid
+confirmed booking confirmed. Deposit bookings are only confirmed (and so
+only sent a confirmation) by the Stripe `checkout.session.completed`
+webhook, after payment succeeds.
+
+Large-group acknowledgement/decline messages and cancellation messages
+also follow the customer's chosen channel when one is recorded.
+
 ## Environment variables needed
 
 Add these to `backend/.env` (never commit real values):

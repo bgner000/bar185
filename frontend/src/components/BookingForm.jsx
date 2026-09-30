@@ -5,6 +5,7 @@ import { Alert, LoadingState, EmptyState } from './Feedback'
 import BookingCalendar from './BookingCalendar'
 import TimePicker from './TimePicker'
 import BookingSecurityChoice from './BookingSecurityChoice'
+import ConfirmationMethodChoice from './ConfirmationMethodChoice'
 import { isLikelyAuMobile } from '../lib/validation'
 
 const EMPTY_FORM = {
@@ -14,6 +15,15 @@ const EMPTY_FORM = {
   customerEmail: '',
   customerPhone: '',
   specialRequests: '',
+  confirmationMethod: '', // 'email' | 'sms' -- no default; the customer must choose
+}
+
+const CONFIRMATION_ERROR_ID = 'confirmation-method-error'
+
+// Human wording for where the confirmation is going, used on the result
+// screens. Mirrors the one channel the customer chose.
+function confirmationDestinationText(method) {
+  return method === 'sms' ? 'by SMS to your mobile' : 'by email'
 }
 
 function BookingForm() {
@@ -27,6 +37,7 @@ function BookingForm() {
   const [result, setResult] = useState(null)
   const [securityMethod, setSecurityMethod] = useState('email') // 'email' | 'deposit'
   const [verification, setVerification] = useState(null) // { channel, verificationId, rawValue } | null
+  const [confirmationError, setConfirmationError] = useState('')
 
   // The single source of truth for "is there a verification proof that
   // still matches what's in the form right now" -- computed fresh every
@@ -89,7 +100,7 @@ function BookingForm() {
         if (data.bookingStatus === 'confirmed') {
           finish('confirmed', {
             reference: data.bookingReference,
-            hasPhone: true,
+            confirmationMethod: data.confirmationMethod,
             depositPaid: true,
             depositAmountCents: data.depositAmountCents,
             partySize: data.partySize,
@@ -209,7 +220,52 @@ function BookingForm() {
     const { name, value } = event.target
     largeGroupIdempotencyKey.current = null
 
+    if (name === 'customerPhone') setConfirmationError('')
+
     setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  const selectConfirmationMethod = (method) => {
+    largeGroupIdempotencyKey.current = null
+    setConfirmationError('')
+    setForm((current) => ({ ...current, confirmationMethod: method }))
+  }
+
+  // Returns an error message, or '' when the choice is valid. SMS goes to
+  // the booking phone number, so it needs a valid Australian mobile.
+  const confirmationMethodProblem = () => {
+    if (form.confirmationMethod !== 'email' && form.confirmationMethod !== 'sms') {
+      return 'Choose how you would like to receive your confirmation: Email or SMS.'
+    }
+
+    if (form.confirmationMethod === 'sms' && !isLikelyAuMobile(form.customerPhone)) {
+      return 'To receive your confirmation by SMS, enter a valid Australian mobile number in the Phone field (e.g. 0412 345 678).'
+    }
+
+    return ''
+  }
+
+  const showConfirmationError = (message) => {
+    setStatus('idle')
+    setConfirmationError(message)
+    // Move keyboard/screen-reader focus to the field that needs attention.
+    requestAnimationFrame(() => {
+      const target =
+        form.confirmationMethod === 'sms'
+          ? document.getElementById('customerPhone')
+          : document.getElementById('confirmation-method-email')
+      target?.focus()
+    })
+  }
+
+  // A server-side rejection of the confirmation choice (the backend
+  // re-validates it) is shown on the field itself, not only in the banner.
+  const handleConfirmationRejection = (error) => {
+    if (error.status === 400 && error.body?.field === 'confirmationMethod') {
+      showConfirmationError(error.message)
+      return true
+    }
+    return false
   }
 
   const resetBooking = () => {
@@ -219,6 +275,7 @@ function BookingForm() {
     setSelectedDate(null)
     setSecurityMethod('email')
     setVerification(null)
+    setConfirmationError('')
   }
 
   const handleSubmit = async (event) => {
@@ -231,6 +288,13 @@ function BookingForm() {
     if (!selectedSlot) {
       setStatus('error')
       setResult({ message: 'Please select a date and time for your booking.' })
+      return
+    }
+
+    const confirmationProblem = confirmationMethodProblem()
+
+    if (confirmationProblem) {
+      showConfirmationError(confirmationProblem)
       return
     }
 
@@ -258,6 +322,7 @@ function BookingForm() {
           customerEmail: form.customerEmail,
           customerPhone: form.customerPhone,
           specialRequests: form.specialRequests,
+          confirmationMethod: form.confirmationMethod,
         })
 
         // Leaving the page on purpose -- the booking is only a capacity
@@ -266,6 +331,8 @@ function BookingForm() {
         // browser's back button before paying.
         window.location.href = data.checkoutUrl
       } catch (error) {
+        if (handleConfirmationRejection(error)) return
+
         if (error.status === 422 && error.body?.status === 'large_group_required') {
           setStatus('error')
           setResult({
@@ -303,13 +370,18 @@ function BookingForm() {
       })
 
       setStatus('confirmed')
-      setResult({ reference: data.booking.booking_reference, hasPhone: Boolean(form.customerPhone.trim()) })
+      setResult({
+        reference: data.booking.booking_reference,
+        confirmationMethod: data.booking.confirmation_method || form.confirmationMethod,
+      })
       setForm(EMPTY_FORM)
       setSelectedDate(null)
       setSecurityMethod('email')
       setVerification(null)
       reloadSlots()
     } catch (error) {
+      if (handleConfirmationRejection(error)) return
+
       if (error.status === 422 && error.body?.status === 'large_group_required') {
         if (!form.customerPhone.trim()) {
           setStatus('error')
@@ -348,18 +420,23 @@ function BookingForm() {
               customerPhone: form.customerPhone,
               customerEmail: form.customerEmail,
               verificationId: verification.verificationId,
+              confirmationMethod: form.confirmationMethod,
             },
             idempotencyKey
           )
 
           setStatus('pending')
-          setResult({ reference: largeGroupData.request.request_reference })
+          setResult({
+            reference: largeGroupData.request.request_reference,
+            confirmationMethod: largeGroupData.request.confirmation_method || form.confirmationMethod,
+          })
           largeGroupIdempotencyKey.current = null
           setForm(EMPTY_FORM)
           setSelectedDate(null)
           setSecurityMethod('email')
           setVerification(null)
         } catch (largeGroupError) {
+          if (handleConfirmationRejection(largeGroupError)) return
           setStatus('error')
           setResult({ message: largeGroupError.message })
         }
@@ -430,8 +507,8 @@ function BookingForm() {
         )}
 
         <p>
-          Confirmation will be sent to your email{result.hasPhone ? ' and mobile' : ''}. Keep your
-          reference handy if you need to cancel.
+          Your confirmation will be sent {confirmationDestinationText(result.confirmationMethod)}. Keep
+          your reference handy if you need to cancel.
           {result.depositPaid &&
             ' Your deposit is credited toward your bill when you attend — cancel at least 12 hours ahead for a full refund.'}
         </p>
@@ -449,8 +526,9 @@ function BookingForm() {
           Request received and pending staff review. Reference: <strong>{result.reference}</strong>.
         </Alert>
         <p>
-          A confirmation of receipt will be sent to your email and mobile. Our team will review
-          availability and follow up by email — this is not yet a confirmed booking.
+          A confirmation of receipt will be sent {confirmationDestinationText(result.confirmationMethod)}.
+          Our team will review availability and let you know the same way — this is not yet a
+          confirmed booking.
         </p>
         <button type="button" className="btn btn-secondary" onClick={resetBooking}>
           Make another booking
@@ -522,8 +600,14 @@ function BookingForm() {
           <input
             id="customerPhone"
             name="customerPhone"
+            type="tel"
+            autoComplete="tel"
             value={form.customerPhone}
             onChange={handleChange}
+            aria-invalid={confirmationError && form.confirmationMethod === 'sms' ? true : undefined}
+            aria-describedby={
+              confirmationError && form.confirmationMethod === 'sms' ? CONFIRMATION_ERROR_ID : undefined
+            }
           />
         </div>
       </div>
@@ -562,6 +646,15 @@ function BookingForm() {
           onChange={handleChange}
         />
       </div>
+
+      <ConfirmationMethodChoice
+        value={form.confirmationMethod}
+        onChange={selectConfirmationMethod}
+        email={form.customerEmail}
+        phone={form.customerPhone}
+        error={confirmationError}
+        errorId={CONFIRMATION_ERROR_ID}
+      />
 
       <BookingSecurityChoice
         email={form.customerEmail}

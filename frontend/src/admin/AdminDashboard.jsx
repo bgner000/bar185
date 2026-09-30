@@ -92,7 +92,7 @@ function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="admin-shell">
+      <div className="admin-shell admin-shell-center">
         <LoadingState label="Loading admin dashboard…" />
       </div>
     )
@@ -101,7 +101,7 @@ function AdminDashboard() {
   if (loadError && !dashboard) {
     return (
       <div className="admin-shell admin-shell-center">
-        <div className="card" style={{ maxWidth: 480 }}>
+        <div className="card admin-load-error">
           <Alert type="error" title="Could not load dashboard">
             {loadError}
           </Alert>
@@ -127,22 +127,28 @@ function AdminDashboard() {
 
   return (
     <div className="admin-shell">
+      <a className="skip-link" href="#admin-main">
+        Skip to main content
+      </a>
+
       <header className="admin-header">
-        <div>
-          <p className="admin-eyebrow">Bar 185 Staff</p>
-          <h1>Admin Dashboard</h1>
+        <div className="admin-brand-block">
+          <p className="brand admin-brand">
+            Bar <span>185</span>
+          </p>
+          <h1 className="admin-title">Admin dashboard</h1>
         </div>
         <div className="admin-header-right">
           <NotificationBell onNavigate={focusNotification} />
-          <div className="admin-identity">
-            <span>{dashboard.admin.displayName}</span>
-            <span className="badge badge-info">{dashboard.admin.role}</span>
-          </div>
+          <p className="admin-identity">
+            <span className="admin-identity-name">{dashboard.admin.displayName}</span>
+            <span className="admin-identity-role">{dashboard.admin.role}</span>
+          </p>
         </div>
       </header>
 
       {actionError && (
-        <div className="container-full">
+        <div className="admin-page-alert">
           <Alert type="error" title="Action failed">
             {actionError}
           </Alert>
@@ -152,7 +158,7 @@ function AdminDashboard() {
       <div className="admin-body">
         <AdminNav active={activeSection} onChange={changeSection} counts={counts} />
 
-        <div className="admin-content">
+        <main id="admin-main" className="admin-content" tabIndex={-1}>
           {activeSection === 'overview' && (
             <>
               <h2 className="admin-section-title">Overview</h2>
@@ -193,7 +199,7 @@ function AdminDashboard() {
           {activeSection === 'events' && <EventsPanel />}
 
           {activeSection === 'menu' && <MenuPanel />}
-        </div>
+        </main>
       </div>
     </div>
   )

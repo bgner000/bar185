@@ -22,7 +22,7 @@ function Book() {
             <VenueImage image={venueImages.interiorNight} className="book-intro-photo" objectPosition="50% 40%" />
 
             <div className="book-intro-detail">
-              <h3>185 Illawarra Road, Marrickville</h3>
+              <h3>185 Marrickville Road, Marrickville</h3>
               <p>Tuesday – Sunday, 4pm till late. Walk-ins welcome, tables recommended.</p>
             </div>
           </div>

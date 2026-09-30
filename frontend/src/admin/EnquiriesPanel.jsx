@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import StatusBadge from '../components/StatusBadge'
 import { Alert, EmptyState } from '../components/Feedback'
 import { useFocusedCard } from '../lib/useFocusedCard'
@@ -59,6 +59,7 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusRef
   const [focusError, setFocusError] = useState('')
 
   const { isFocused } = useFocusedCard(focusReference)
+  const controlId = useId()
 
   // Deep link from a notification -- same reasoning as LargeGroupPanel:
   // the full enquiry list is already in memory, so this only has to find
@@ -101,9 +102,15 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusRef
     <div>
       {focusError && <Alert type="error">{focusError}</Alert>}
 
-      <div className="admin-toolbar">
-        <span className="admin-toolbar-label">Filter</span>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+      <div className="admin-toolbar" role="search" aria-label="Filter event enquiries">
+        <label className="admin-toolbar-label" htmlFor={`${controlId}-status`}>
+          Status
+        </label>
+        <select
+          id={`${controlId}-status`}
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+        >
           {FILTER_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -111,8 +118,10 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusRef
           ))}
         </select>
 
-        <span className="admin-toolbar-label">Sort</span>
-        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+        <label className="admin-toolbar-label" htmlFor={`${controlId}-sort`}>
+          Sort by
+        </label>
+        <select id={`${controlId}-sort`} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
           {SORT_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -120,7 +129,11 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusRef
           ))}
         </select>
 
+        <label className="visually-hidden" htmlFor={`${controlId}-search`}>
+          Search enquiries by customer name or reference
+        </label>
         <input
+          id={`${controlId}-search`}
           type="search"
           placeholder="Search customer or reference…"
           value={search}
@@ -131,78 +144,96 @@ function EnquiriesPanel({ enquiries, updatingReference, onStatusChange, focusRef
       {visible.length === 0 ? (
         <EmptyState label="No enquiries match." />
       ) : (
-        <div className="admin-card-list">
+        <ul className="admin-record-list">
           {visible.map((enquiry) => {
-        const isUpdating = updatingReference === enquiry.enquiry_reference
+            const isUpdating = updatingReference === enquiry.enquiry_reference
+            const statusId = `status-${enquiry.enquiry_reference}`
 
-        return (
-          <div
-            className={`card admin-request-card${isFocused(enquiry.enquiry_reference) ? ' admin-focused' : ''}`}
-            key={enquiry.id}
-            data-focus-id={enquiry.enquiry_reference}
-          >
-            <div className="admin-request-head">
-              <div>
-                <h3>{enquiry.enquiry_reference}</h3>
-                <span className="field-hint">
-                  {enquiry.preferred_start_at
-                    ? formatDateTime(enquiry.preferred_start_at)
-                    : 'No preferred date given'}
-                </span>
-              </div>
-              <StatusBadge status={enquiry.status} />
-            </div>
-
-            <div className="admin-request-details">
-              <div>
-                <span className="admin-detail-label">Customer</span>
-                <span>{enquiry.customer_name}</span>
-              </div>
-              <div>
-                <span className="admin-detail-label">Email</span>
-                <span>{enquiry.customer_email}</span>
-              </div>
-              <div>
-                <span className="admin-detail-label">Phone</span>
-                <span>{enquiry.customer_phone || 'Not provided'}</span>
-              </div>
-              <div>
-                <span className="admin-detail-label">Event Type</span>
-                <span>{enquiry.event_type || 'Not specified'}</span>
-              </div>
-              <div>
-                <span className="admin-detail-label">Guests</span>
-                <span>{enquiry.expected_guest_count || 'Not specified'}</span>
-              </div>
-            </div>
-
-            <p className="admin-request-message">{enquiry.message}</p>
-
-            <div className="field admin-status-field">
-              <label htmlFor={`status-${enquiry.enquiry_reference}`}>Update status</label>
-              <select
-                id={`status-${enquiry.enquiry_reference}`}
-                value={STATUS_OPTIONS.some((option) => option.value === enquiry.status) ? enquiry.status : ''}
-                disabled={isUpdating}
-                onChange={(event) => onStatusChange(enquiry.enquiry_reference, event.target.value)}
+            return (
+              <li
+                className={`admin-record${isFocused(enquiry.enquiry_reference) ? ' admin-focused' : ''}`}
+                key={enquiry.id}
+                data-focus-id={enquiry.enquiry_reference}
               >
-                {enquiry.status === 'new' && (
-                  <option value="" disabled>
-                    New — choose next status
-                  </option>
-                )}
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              {isUpdating && <span className="field-hint">Updating…</span>}
-            </div>
-          </div>
-        )
+                <div className="admin-record-head">
+                  <div>
+                    <h3 className="admin-record-title">{enquiry.customer_name}</h3>
+                    <p className="admin-record-meta">
+                      <span>{enquiry.enquiry_reference}</span>
+                      <span>Received {formatDateTime(enquiry.created_at)}</span>
+                    </p>
+                  </div>
+                  <StatusBadge status={enquiry.status} />
+                </div>
+
+                <dl className="admin-record-details">
+                  <div>
+                    <dt>Preferred date</dt>
+                    <dd>
+                      {enquiry.preferred_start_at
+                        ? formatDateTime(enquiry.preferred_start_at)
+                        : 'No preferred date given'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Event type</dt>
+                    <dd>{enquiry.event_type || 'Not specified'}</dd>
+                  </div>
+                  <div>
+                    <dt>Guests</dt>
+                    <dd>{enquiry.expected_guest_count || 'Not specified'}</dd>
+                  </div>
+                  <div>
+                    <dt>Email</dt>
+                    <dd>
+                      <a className="admin-contact" href={`mailto:${enquiry.customer_email}`}>
+                        {enquiry.customer_email}
+                      </a>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Phone</dt>
+                    <dd>{enquiry.customer_phone || 'Not provided'}</dd>
+                  </div>
+                </dl>
+
+                <div className="admin-record-message">
+                  <span className="admin-record-message-label">Message</span>
+                  <p>{enquiry.message}</p>
+                </div>
+
+                <div className="field admin-status-field">
+                  <label htmlFor={statusId}>
+                    Update status<span className="visually-hidden"> for {enquiry.enquiry_reference}</span>
+                  </label>
+                  <select
+                    id={statusId}
+                    value={STATUS_OPTIONS.some((option) => option.value === enquiry.status) ? enquiry.status : ''}
+                    disabled={isUpdating}
+                    aria-describedby={isUpdating ? `${statusId}-busy` : undefined}
+                    onChange={(event) => onStatusChange(enquiry.enquiry_reference, event.target.value)}
+                  >
+                    {enquiry.status === 'new' && (
+                      <option value="" disabled>
+                        New — choose next status
+                      </option>
+                    )}
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  {isUpdating && (
+                    <span id={`${statusId}-busy`} className="field-hint" role="status">
+                      Updating…
+                    </span>
+                  )}
+                </div>
+              </li>
+            )
           })}
-        </div>
+        </ul>
       )}
     </div>
   )

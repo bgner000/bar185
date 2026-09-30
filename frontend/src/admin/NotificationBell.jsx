@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import api from '../lib/api'
 import { Alert, LoadingState, EmptyState } from '../components/Feedback'
 import { formatRelativeTime } from '../lib/format'
@@ -33,6 +33,8 @@ function NotificationBell({ onNavigate }) {
   const [markingAll, setMarkingAll] = useState(false)
 
   const wrapRef = useRef(null)
+  const bellRef = useRef(null)
+  const panelId = useId()
 
   const loadNotifications = () =>
     api
@@ -66,7 +68,10 @@ function NotificationBell({ onNavigate }) {
     }
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') {
+        setOpen(false)
+        bellRef.current?.focus()
+      }
     }
 
     document.addEventListener('mousedown', handlePointerDown)
@@ -121,15 +126,17 @@ function NotificationBell({ onNavigate }) {
   }
 
   const badgeLabel = unreadCount > 9 ? '9+' : String(unreadCount)
+  const bellLabel = unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
 
   return (
     <div className="notif-bell-wrap" ref={wrapRef}>
       <button
         type="button"
-        className="notif-bell"
-        aria-label="Notifications"
-        aria-haspopup="true"
+        ref={bellRef}
+        className={`notif-bell${open ? ' open' : ''}`}
+        aria-label={bellLabel}
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((current) => !current)}
       >
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
@@ -141,13 +148,17 @@ function NotificationBell({ onNavigate }) {
           />
           <path d="M9.8 19a2.3 2.3 0 0 0 4.4 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
-        {unreadCount > 0 && <span className="notif-badge">{badgeLabel}</span>}
+        {unreadCount > 0 && (
+          <span className="notif-badge" aria-hidden="true">
+            {badgeLabel}
+          </span>
+        )}
       </button>
 
       {open && (
-        <div className="notif-dropdown" role="menu" aria-label="Notifications">
+        <section id={panelId} className="notif-dropdown" aria-labelledby={`${panelId}-title`}>
           <div className="notif-dropdown-header">
-            <h3>Notifications</h3>
+            <h2 id={`${panelId}-title`}>Notifications</h2>
             <button
               type="button"
               className="notif-mark-all"
@@ -175,26 +186,28 @@ function NotificationBell({ onNavigate }) {
               </div>
             )}
 
-            {!loading &&
-              !error &&
-              notifications.map((notification) => (
-                <button
-                  key={notification.id}
-                  type="button"
-                  role="menuitem"
-                  className={`notif-item${notification.is_read ? '' : ' unread'}`}
-                  onClick={() => handleNotificationClick(notification)}
-                >
-                  <span className={`notif-dot${notification.is_read ? ' notif-dot-read' : ''}`} aria-hidden="true" />
-                  <span className="notif-content">
-                    <span className="notif-title">{notification.title}</span>
-                    <span className="notif-message">{notification.message}</span>
-                    <span className="notif-time">{formatRelativeTime(notification.created_at)}</span>
-                  </span>
-                </button>
-              ))}
+            {!loading && !error && notifications.length > 0 && (
+              <ul className="notif-items">
+                {notifications.map((notification) => (
+                  <li key={notification.id}>
+                    <button
+                      type="button"
+                      className={`notif-item${notification.is_read ? '' : ' unread'}`}
+                      onClick={() => handleNotificationClick(notification)}
+                    >
+                      <span className="notif-title-row">
+                        <span className="notif-title">{notification.title}</span>
+                        {!notification.is_read && <span className="notif-unread-tag">Unread</span>}
+                      </span>
+                      <span className="notif-message">{notification.message}</span>
+                      <span className="notif-time">{formatRelativeTime(notification.created_at)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        </div>
+        </section>
       )}
     </div>
   )

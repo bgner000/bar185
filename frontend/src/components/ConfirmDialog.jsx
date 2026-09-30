@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+import { useId, useState } from 'react'
+import { useModalFocus } from '../lib/useModalFocus'
 
 // A single reusable confirmation modal for every dangerous/important admin
 // action (approve, decline, admin cancel, mark no-show, replace menu, ...),
@@ -10,6 +8,10 @@ const FOCUSABLE_SELECTOR =
 // there's something to confirm (e.g. `{target && <ConfirmDialog .../>}`),
 // so mounting it fresh each time is what resets its internal state — no
 // effect-based reset needed.
+//
+// Keyboard behaviour (focus moved in on open, Tab trapped, Escape closes,
+// focus returned to the trigger on close) lives in useModalFocus, shared
+// with the Events edit dialog.
 function ConfirmDialog({
   title,
   description,
@@ -27,44 +29,19 @@ function ConfirmDialog({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const panelRef = useRef(null)
 
-  // Moves keyboard/screen-reader focus into the dialog the moment it
-  // appears (nothing does this by default -- without it, focus silently
-  // stays on the trigger button underneath the now-open overlay) and traps
-  // Tab/Shift+Tab within it while it's open, so a keyboard user can never
-  // tab into the page content the overlay is visually blocking.
-  useEffect(() => {
-    const panel = panelRef.current
-    if (!panel) return undefined
+  const baseId = useId()
+  const titleId = `${baseId}-title`
+  const descriptionId = `${baseId}-description`
+  const reasonId = `${baseId}-reason`
+  const errorId = `${baseId}-error`
 
-    panel.focus()
-
-    const handleTrapTab = (event) => {
-      if (event.key !== 'Tab') return
-
-      const focusable = Array.from(panel.querySelectorAll(FOCUSABLE_SELECTOR))
-      if (focusable.length === 0) return
-
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    panel.addEventListener('keydown', handleTrapTab)
-    return () => panel.removeEventListener('keydown', handleTrapTab)
-  }, [])
+  const panelRef = useModalFocus({ onEscape: onClose, locked: submitting })
 
   const handleConfirm = async () => {
     if (showReason && reasonRequired && !reason.trim()) {
-      setError('A reason is required.')
+      setError(`${reasonLabel.replace(/\s*\(.*\)\s*$/, '')} is required. Enter a reason before continuing.`)
+      document.getElementById(reasonId)?.focus()
       return
     }
 
@@ -79,47 +56,67 @@ function ConfirmDialog({
     }
   }
 
-  const handleOverlayKeyDown = (event) => {
-    if (event.key === 'Escape' && !submitting) onClose()
-  }
+  const reasonHasError = Boolean(error) && showReason && reasonRequired && !reason.trim()
 
   return (
-    <div
-      className="modal-overlay"
-      role="presentation"
-      onClick={() => !submitting && onClose()}
-      onKeyDown={handleOverlayKeyDown}
-    >
+    <div className="modal-overlay" role="presentation" onClick={() => !submitting && onClose()}>
       <div
         ref={panelRef}
         className="modal-panel"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
-        <h3>{title}</h3>
-        {description && <p className="modal-description">{description}</p>}
+        <div className="modal-head">
+          <h2 id={titleId} className="modal-title">
+            {title}
+          </h2>
+          <button
+            type="button"
+            className="modal-close"
+            aria-label="Close dialog"
+            disabled={submitting}
+            onClick={onClose}
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {description && (
+          <p id={descriptionId} className="modal-description">
+            {description}
+          </p>
+        )}
         {children}
 
         {showReason && (
           <div className="field modal-reason-field">
-            <label htmlFor="confirm-dialog-reason">{reasonLabel}</label>
+            <label htmlFor={reasonId}>{reasonLabel}</label>
             <textarea
-              id="confirm-dialog-reason"
+              id={reasonId}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               disabled={submitting}
               placeholder={reasonPlaceholder}
+              required={reasonRequired}
+              aria-invalid={reasonHasError || undefined}
+              aria-describedby={reasonHasError ? errorId : undefined}
               rows={3}
             />
           </div>
         )}
 
         {error && (
-          <div className="alert alert-error modal-error" role="alert">
-            {error}
+          <div id={errorId} className="alert alert-error modal-error" role="alert">
+            <p>
+              <strong>Error: </strong>
+              {error}
+            </p>
           </div>
         )}
 

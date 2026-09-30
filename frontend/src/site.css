@@ -1063,6 +1063,129 @@
   line-height: 1.5;
 }
 
+/* ---------- confirmation method (email / SMS) ---------- */
+/* Same bordered-option treatment as .security-method-option above, built on
+   native radio inputs. Selection is shown by the radio dot, a heavier wine
+   border and a "Selected" text marker -- never colour alone. */
+
+.confirmation-method {
+  border: none;
+  padding: 0;
+  margin: 0 0 18px;
+  min-width: 0;
+}
+
+.confirmation-method-legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.confirmation-method-required {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.confirmation-method-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .confirmation-method-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.confirmation-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  background: var(--paper);
+  border: 1px solid var(--border-strong);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.confirmation-option:hover {
+  border-color: var(--wine);
+}
+
+.confirmation-option.selected {
+  border: 2px solid var(--wine);
+  padding: 13px 15px;
+  background: var(--stone-soft);
+}
+
+.confirmation-option input[type='radio'] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--wine);
+  cursor: pointer;
+}
+
+/* The radio itself shows the keyboard focus ring (the shared input focus
+   style draws only a soft glow, too faint on a 20px control). */
+.confirmation-option input[type='radio']:focus-visible {
+  outline: 2.5px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.confirmation-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.confirmation-option-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.confirmation-option-selected {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wine);
+}
+
+.confirmation-option-hint {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.confirmation-method.has-error .confirmation-option {
+  border-color: var(--danger);
+}
+
+.field-error {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  font-size: 0.9rem;
+  max-width: none;
+}
+
 .manage-booking h3 {
   font-family: var(--sans);
   font-weight: 700;

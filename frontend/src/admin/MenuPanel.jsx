@@ -186,8 +186,10 @@ function MenuPanel() {
         </Alert>
       )}
 
-      <div className="card card-raised admin-menu-current">
-        <h3>Current published menu</h3>
+      <section className="admin-panel" aria-labelledby="menu-current-heading">
+        <h3 id="menu-current-heading" className="admin-panel-title">
+          Current published menu
+        </h3>
 
         {pages.length > 0 ? (
           <ul className="admin-menu-pages-list">
@@ -195,7 +197,7 @@ function MenuPanel() {
               <li key={page.id} className="admin-menu-page-row">
                 <div className="admin-menu-page-info">
                   <span className="admin-menu-page-heading">
-                    Page {page.sortOrder} — {page.title}
+                    <span className="admin-menu-page-number">Page {page.sortOrder}</span> {page.title}
                   </span>
                   <span className="field-hint">{page.fileName}</span>
                 </div>
@@ -206,7 +208,7 @@ function MenuPanel() {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Preview
+                    Preview page<span className="visually-hidden"> “{page.title}” (opens in a new tab)</span>
                   </a>
                   <button
                     type="button"
@@ -214,7 +216,7 @@ function MenuPanel() {
                     disabled={mutating}
                     onClick={() => startReplace(page.id)}
                   >
-                    Replace Page
+                    Replace file<span className="visually-hidden"> for “{page.title}”</span>
                   </button>
                   <button
                     type="button"
@@ -222,7 +224,7 @@ function MenuPanel() {
                     disabled={mutating || index === 0}
                     onClick={() => movePage(index, index - 1)}
                   >
-                    Move Up
+                    Move up<span className="visually-hidden"> “{page.title}”</span>
                   </button>
                   <button
                     type="button"
@@ -230,7 +232,7 @@ function MenuPanel() {
                     disabled={mutating || index === pages.length - 1}
                     onClick={() => movePage(index, index + 1)}
                   >
-                    Move Down
+                    Move down<span className="visually-hidden"> “{page.title}”</span>
                   </button>
                   <button
                     type="button"
@@ -238,7 +240,7 @@ function MenuPanel() {
                     disabled={mutating}
                     onClick={() => setDeleteTarget(page)}
                   >
-                    Delete
+                    Delete page<span className="visually-hidden"> “{page.title}”</span>
                   </button>
                 </div>
               </li>
@@ -254,44 +256,57 @@ function MenuPanel() {
           accept={ACCEPTED_TYPES.join(',')}
           onChange={handleReplaceFileChosen}
           className="visually-hidden"
+          tabIndex={-1}
+          aria-hidden="true"
         />
-      </div>
+      </section>
 
-      <div className="card card-raised admin-menu-upload">
-        <h3>Add a menu page</h3>
-        <p className="field-hint">
+      <section className="admin-panel" aria-labelledby="menu-upload-heading">
+        <h3 id="menu-upload-heading" className="admin-panel-title">
+          Add a menu page
+        </h3>
+        <p className="field-hint" id="menu-upload-hint">
           Accepted formats: PDF, JPG, or PNG. Maximum 20MB. A new page is added to the end of the
           menu — existing pages are never replaced.
         </p>
 
         {!addFormOpen ? (
           <button type="button" className="btn btn-secondary" onClick={() => setAddFormOpen(true)}>
-            + Add Menu Page
+            Add menu page
           </button>
         ) : (
           <div className="admin-menu-add-form">
             <label className="btn btn-secondary admin-menu-file-btn">
-              Choose File
+              {addFile ? 'Choose a different file' : 'Choose file'}
               <input
                 type="file"
                 accept={ACCEPTED_TYPES.join(',')}
                 onChange={handleAddFileChange}
                 className="visually-hidden"
+                aria-describedby={addFileError ? 'menu-upload-error' : 'menu-upload-hint'}
+                aria-invalid={addFileError ? true : undefined}
               />
             </label>
 
-            {addFileError && <p className="admin-menu-file-error">{addFileError}</p>}
+            {addFileError && (
+              <p id="menu-upload-error" className="admin-menu-file-error" role="alert">
+                <strong>Error: </strong>
+                {addFileError}
+              </p>
+            )}
 
             {addFile && (
               <div className="admin-menu-file-preview">
-                <div>
-                  <span className="admin-detail-label">Selected file</span>
-                  <span>{addFile.name}</span>
-                </div>
-                <div>
-                  <span className="admin-detail-label">Size</span>
-                  <span>{formatFileSize(addFile.size)}</span>
-                </div>
+                <dl className="admin-record-details admin-menu-file-meta">
+                  <div>
+                    <dt>Selected file</dt>
+                    <dd className="admin-break">{addFile.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Size</dt>
+                    <dd>{formatFileSize(addFile.size)}</dd>
+                  </div>
+                </dl>
                 <div className="field admin-menu-title-field">
                   <label htmlFor="admin-menu-add-title">Title (optional)</label>
                   <input
@@ -308,21 +323,23 @@ function MenuPanel() {
                   onClick={handleAddPageSubmit}
                   disabled={mutating}
                 >
-                  Add Page
+                  Add page to menu
                 </button>
               </div>
             )}
 
-            <button type="button" className="btn btn-ghost btn-sm admin-menu-cancel-add" onClick={resetAddForm}>
-              Cancel
+            <button type="button" className="btn btn-secondary btn-sm" onClick={resetAddForm}>
+              Cancel upload
             </button>
           </div>
         )}
-      </div>
+      </section>
 
       {(history.length > 0 || versionMessage) && (
-        <div className="card admin-menu-history">
-          <h3>Previous versions</h3>
+        <section className="admin-panel" aria-labelledby="menu-history-heading">
+          <h3 id="menu-history-heading" className="admin-panel-title">
+            Previous versions
+          </h3>
 
           {versionMessage && <Alert type="success">{versionMessage}</Alert>}
 
@@ -339,12 +356,15 @@ function MenuPanel() {
                   <div className="admin-menu-history-actions">
                     {historyVersion.pages[0] && (
                       <a
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-secondary btn-sm"
                         href={`${API_ORIGIN}${historyVersion.pages[0].url}`}
                         target="_blank"
                         rel="noreferrer"
                       >
-                        View
+                        View version
+                        <span className="visually-hidden">
+                          {' '}from {formatDateTime(historyVersion.publishedAt || historyVersion.createdAt)} (opens in a new tab)
+                        </span>
                       </a>
                     )}
                     <button
@@ -352,21 +372,25 @@ function MenuPanel() {
                       className="btn btn-danger-outline btn-sm"
                       onClick={() => setDeleteVersionTarget(historyVersion)}
                     >
-                      Delete
+                      Delete version
+                      <span className="visually-hidden">
+                        {' '}from {formatDateTime(historyVersion.publishedAt || historyVersion.createdAt)}
+                      </span>
                     </button>
                   </div>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </section>
       )}
 
       {deleteTarget && (
         <ConfirmDialog
           title={`Remove "${deleteTarget.title}" from this menu?`}
           description="This page will no longer appear on the public menu. The uploaded file itself isn't deleted."
-          confirmLabel="Delete Page"
+          confirmLabel="Delete page"
+          cancelLabel="Keep page"
           danger
           onConfirm={handleDeleteConfirm}
           onClose={() => setDeleteTarget(null)}
@@ -377,7 +401,8 @@ function MenuPanel() {
         <ConfirmDialog
           title="Delete this previous menu version?"
           description="This permanently removes it from your menu history. Its file is only removed from storage if no other menu version still uses it."
-          confirmLabel="Delete Version"
+          confirmLabel="Delete version"
+          cancelLabel="Keep version"
           danger
           onConfirm={handleDeleteVersionConfirm}
           onClose={() => setDeleteVersionTarget(null)}

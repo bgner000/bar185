@@ -8,7 +8,7 @@ function Footer() {
           <p className="brand footer-brand">
             Bar <span>185</span>
           </p>
-          <p className="footer-location">185 Illawarra Road, Marrickville NSW 2204</p>
+          <p className="footer-location">185 Marrickville Road, Marrickville NSW 2204</p>
         </div>
 
         <p className="footer-hours">

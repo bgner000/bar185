@@ -5,21 +5,21 @@ function DashboardSummary({ bookings, largeGroupRequests, eventEnquiries }) {
     (e) => !['closed', 'declined'].includes(e.status)
   ).length
 
-  const cards = [
-    { label: 'Confirmed Bookings', value: confirmedBookings },
-    { label: 'Pending Large-Group Requests', value: pendingLargeGroup },
-    { label: 'Open Event Enquiries', value: openEnquiries },
+  const stats = [
+    { label: 'Confirmed bookings', value: confirmedBookings },
+    { label: 'Pending large-group requests', value: pendingLargeGroup },
+    { label: 'Open event enquiries', value: openEnquiries },
   ]
 
   return (
-    <div className="grid grid-3 admin-summary">
-      {cards.map((card) => (
-        <div className="card admin-summary-card" key={card.label}>
-          <span className="admin-summary-value">{card.value}</span>
-          <span className="admin-summary-label">{card.label}</span>
+    <dl className="admin-stats">
+      {stats.map((stat) => (
+        <div className="admin-stat" key={stat.label}>
+          <dt className="admin-stat-label">{stat.label}</dt>
+          <dd className="admin-stat-value">{stat.value}</dd>
         </div>
       ))}
-    </div>
+    </dl>
   )
 }
 

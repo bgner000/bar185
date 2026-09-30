@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { Alert, EmptyState } from '../components/Feedback'
@@ -49,6 +49,7 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
   const [focusError, setFocusError] = useState('')
 
   const { isFocused } = useFocusedCard(focusReference)
+  const controlId = useId()
 
   // Deep link from a notification: the full request list is already in
   // memory (no per-item fetch needed here, unlike bookings), so this only
@@ -109,10 +110,11 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
     <div>
       {focusError && <Alert type="error">{focusError}</Alert>}
 
-      <div className="admin-subtabs">
+      <div className="admin-subtabs" role="group" aria-label="Request list">
         <button
           type="button"
           className={`admin-subtab${tab === 'pending' ? ' active' : ''}`}
+          aria-pressed={tab === 'pending'}
           onClick={() => setTab('pending')}
         >
           Pending
@@ -121,17 +123,24 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
         <button
           type="button"
           className={`admin-subtab${tab === 'history' ? ' active' : ''}`}
+          aria-pressed={tab === 'history'}
           onClick={() => setTab('history')}
         >
           History
         </button>
       </div>
 
-      <div className="admin-toolbar">
+      <div className="admin-toolbar" role="search" aria-label="Filter large-group requests">
         {tab === 'history' && (
           <>
-            <span className="admin-toolbar-label">Filter</span>
-            <select value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)}>
+            <label className="admin-toolbar-label" htmlFor={`${controlId}-status`}>
+              Outcome
+            </label>
+            <select
+              id={`${controlId}-status`}
+              value={historyFilter}
+              onChange={(event) => setHistoryFilter(event.target.value)}
+            >
               <option value="all">All</option>
               <option value="confirmed">Confirmed</option>
               <option value="declined">Declined</option>
@@ -139,8 +148,10 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
           </>
         )}
 
-        <span className="admin-toolbar-label">Sort</span>
-        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+        <label className="admin-toolbar-label" htmlFor={`${controlId}-sort`}>
+          Sort by
+        </label>
+        <select id={`${controlId}-sort`} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
           {SORT_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -148,7 +159,11 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
           ))}
         </select>
 
+        <label className="visually-hidden" htmlFor={`${controlId}-search`}>
+          Search requests by customer name or reference
+        </label>
         <input
+          id={`${controlId}-search`}
           type="search"
           placeholder="Search customer or reference…"
           value={search}
@@ -161,96 +176,108 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
           label={tab === 'pending' ? 'No pending large-group requests.' : 'No matching requests.'}
         />
       ) : (
-        <div className="admin-card-list">
-          {filteredSorted.map((request) => {
-            return (
-              <div
-                className={`card admin-request-card${isFocused(request.request_reference) ? ' admin-focused' : ''}`}
-                key={request.id}
-                data-focus-id={request.request_reference}
-              >
-                <div className="admin-request-head">
-                  <div>
-                    <h3>{request.request_reference}</h3>
-                    <span className="field-hint">{formatDateTime(request.slot_start_at)}</span>
-                  </div>
-                  <StatusBadge status={request.status} />
-                </div>
-
-                <div className="admin-request-details">
-                  <div>
-                    <span className="admin-detail-label">Customer</span>
-                    <span>{request.customer_name}</span>
-                  </div>
-                  <div>
-                    <span className="admin-detail-label">Party</span>
-                    <span>{request.party_size} guests</span>
-                  </div>
-                  <div>
-                    <span className="admin-detail-label">Email</span>
-                    <span>{request.customer_email}</span>
-                  </div>
-                  <div>
-                    <span className="admin-detail-label">Phone</span>
-                    <span>{request.customer_phone || 'Not provided'}</span>
-                  </div>
-                </div>
-
-                {request.status === 'pending' ? (
-                  <div className="admin-request-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => setConfirmTarget({ request, action: 'approve' })}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-danger-outline btn-sm"
-                      onClick={() => setConfirmTarget({ request, action: 'decline' })}
-                    >
-                      Decline
-                    </button>
-                  </div>
-                ) : request.status === 'declined' && request.decline_reason ? (
-                  <p className="admin-request-message">
-                    <strong>Decline reason:</strong> {request.decline_reason}
-                  </p>
-                ) : (
-                  <p className="field-hint">
-                    This request is {request.status} and no longer needs action.
-                  </p>
-                )}
-              </div>
-            )
-          })}
+        <div
+          className="admin-table-wrap"
+          role="region"
+          aria-label={tab === 'pending' ? 'Pending large-group requests' : 'Large-group request history'}
+          tabIndex={0}
+        >
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th scope="col">Request</th>
+                <th scope="col">Requested for</th>
+                <th scope="col">Guest</th>
+                <th scope="col">Party</th>
+                <th scope="col">Status</th>
+                <th scope="col">{tab === 'pending' ? 'Actions' : 'Outcome'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSorted.map((request) => (
+                <tr
+                  className={isFocused(request.request_reference) ? 'admin-focused' : undefined}
+                  key={request.id}
+                  data-focus-id={request.request_reference}
+                >
+                  <th scope="row" className="admin-cell-ref">
+                    {request.request_reference}
+                    <span className="admin-cell-sub">Received {formatDateTime(request.created_at)}</span>
+                  </th>
+                  <td className="admin-cell-time">{formatDateTime(request.slot_start_at)}</td>
+                  <td className="admin-cell-guest">
+                    <span className="admin-cell-strong">{request.customer_name}</span>
+                    <a className="admin-cell-sub admin-contact" href={`mailto:${request.customer_email}`}>
+                      {request.customer_email}
+                    </a>
+                    <span className="admin-cell-sub">{request.customer_phone || 'Phone not provided'}</span>
+                    {request.confirmation_method && (
+                      <span className="admin-cell-sub admin-confirmation">
+                        Confirm by {request.confirmation_method === 'sms' ? 'SMS' : 'Email'}
+                      </span>
+                    )}
+                  </td>
+                  <td className="admin-cell-num">{request.party_size}</td>
+                  <td>
+                    <StatusBadge status={request.status} />
+                  </td>
+                  <td className="admin-cell-actions">
+                    {request.status === 'pending' ? (
+                      <div className="admin-actions">
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => setConfirmTarget({ request, action: 'approve' })}
+                        >
+                          Approve request
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-danger-outline btn-sm"
+                          onClick={() => setConfirmTarget({ request, action: 'decline' })}
+                        >
+                          Decline request
+                        </button>
+                      </div>
+                    ) : request.status === 'declined' && request.decline_reason ? (
+                      <span className="admin-cell-note">
+                        <strong>Decline reason:</strong> {request.decline_reason}
+                      </span>
+                    ) : (
+                      <span className="admin-cell-sub">No further action needed.</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
       {confirmTarget && confirmTarget.action === 'approve' && (
         <ConfirmDialog
           title="Approve this large-group booking?"
-          confirmLabel="Confirm Approval"
+          confirmLabel="Approve request"
+          cancelLabel="Go back"
           onConfirm={handleConfirm}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.request.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.request.customer_name}</dd>
             </div>
             <div>
-              <span>Date &amp; time</span>
-              <span>{formatDateTime(confirmTarget.request.slot_start_at)}</span>
+              <dt>Date &amp; time</dt>
+              <dd>{formatDateTime(confirmTarget.request.slot_start_at)}</dd>
             </div>
             <div>
-              <span>Party size</span>
-              <span>{confirmTarget.request.party_size} guests</span>
+              <dt>Party size</dt>
+              <dd>{confirmTarget.request.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.request.request_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.request.request_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>
@@ -263,27 +290,28 @@ function LargeGroupPanel({ requests, onApprove, onDecline, focusReference }) {
           reasonRequired
           reasonLabel="Reason (kept for staff records)"
           reasonPlaceholder="e.g. No availability for this party size on the requested date"
-          confirmLabel="Confirm Decline"
+          confirmLabel="Decline request"
+          cancelLabel="Go back"
           danger
           onConfirm={handleConfirm}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.request.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.request.customer_name}</dd>
             </div>
             <div>
-              <span>Date &amp; time</span>
-              <span>{formatDateTime(confirmTarget.request.slot_start_at)}</span>
+              <dt>Date &amp; time</dt>
+              <dd>{formatDateTime(confirmTarget.request.slot_start_at)}</dd>
             </div>
             <div>
-              <span>Party size</span>
-              <span>{confirmTarget.request.party_size} guests</span>
+              <dt>Party size</dt>
+              <dd>{confirmTarget.request.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.request.request_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.request.request_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>

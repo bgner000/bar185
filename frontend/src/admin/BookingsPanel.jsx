@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import api from '../lib/api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
@@ -86,6 +86,23 @@ function depositBadge(booking) {
   }
 }
 
+// Where the customer's confirmation went, and whether it arrived at the
+// provider. Rows created before the Email/SMS choice existed have no
+// method or status recorded.
+const CONFIRMATION_METHOD_LABELS = { email: 'Email', sms: 'SMS' }
+const CONFIRMATION_STATUS_LABELS = { sent: 'Sent', failed: 'Failed', pending: 'Sending' }
+
+function confirmationSummary(booking) {
+  const method = CONFIRMATION_METHOD_LABELS[booking.confirmation_method] || null
+  let status = CONFIRMATION_STATUS_LABELS[booking.confirmation_delivery_status] || null
+
+  if (!status) {
+    status = booking.status === 'pending' ? 'Awaiting payment' : method ? 'Not sent' : null
+  }
+
+  return { method, status, failed: booking.confirmation_delivery_status === 'failed' }
+}
+
 // UI-level action tags for the confirm dialog map onto the actual target
 // status the backend expects -- kept distinct from the status string itself
 // so the dialog-selection logic below doesn't have to guess intent from the
@@ -104,11 +121,11 @@ function CalendarIcon() {
   )
 }
 
-function SummaryCard({ label, value }) {
+function SummaryStat({ label, value }) {
   return (
-    <div className="card admin-summary-card">
-      <span className="admin-summary-value">{value}</span>
-      <span className="admin-summary-label">{label}</span>
+    <div className="admin-stat">
+      <dt className="admin-stat-label">{label}</dt>
+      <dd className="admin-stat-value">{value}</dd>
     </div>
   )
 }
@@ -128,6 +145,7 @@ function BookingsPanel({ focusReference }) {
   const [search, setSearch] = useState('')
 
   const { isFocused } = useFocusedCard(focusReference)
+  const controlId = useId()
 
   const fetchBookings = (date) =>
     api
@@ -270,18 +288,18 @@ function BookingsPanel({ focusReference }) {
           </button>
           <label className="admin-date-input">
             <CalendarIcon />
+            <span className="visually-hidden">Service date</span>
             <input
               type="date"
               value={selectedDate}
               onChange={(event) => event.target.value && setSelectedDate(event.target.value)}
-              aria-label="Choose a service date"
             />
           </label>
         </div>
       </div>
 
       <div className="admin-refresh-row">
-        <span className="field-hint">
+        <span className="field-hint" aria-live="polite">
           {lastUpdated
             ? `Last updated: ${lastUpdated.toLocaleTimeString('en-AU', {
                 timeZone: 'Australia/Sydney',
@@ -291,8 +309,8 @@ function BookingsPanel({ focusReference }) {
               })}`
             : ' '}
         </span>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={handleManualRefresh} disabled={refreshing}>
-          {refreshing ? 'Refreshing…' : 'Refresh'}
+        <button type="button" className="btn btn-secondary btn-sm" onClick={handleManualRefresh} disabled={refreshing}>
+          {refreshing ? 'Refreshing…' : 'Refresh bookings'}
         </button>
       </div>
 
@@ -303,18 +321,24 @@ function BookingsPanel({ focusReference }) {
         <LoadingState label="Loading bookings…" />
       ) : (
         <>
-          <div className="grid grid-3 admin-summary">
-            <SummaryCard label="Total Bookings" value={summary.totalBookings} />
-            <SummaryCard label="Expected Guests" value={summary.expectedGuests} />
-            <SummaryCard label="Seated / Arrived" value={summary.seatedGuests} />
-            <SummaryCard label="Remaining Expected" value={summary.remainingExpectedGuests} />
-            <SummaryCard label="No-shows" value={summary.noShowCount} />
-            <SummaryCard label="Cancelled" value={summary.cancelledCount} />
-          </div>
+          <dl className="admin-stats admin-stats-6">
+            <SummaryStat label="Total bookings" value={summary.totalBookings} />
+            <SummaryStat label="Expected guests" value={summary.expectedGuests} />
+            <SummaryStat label="Seated / arrived" value={summary.seatedGuests} />
+            <SummaryStat label="Remaining expected" value={summary.remainingExpectedGuests} />
+            <SummaryStat label="No-shows" value={summary.noShowCount} />
+            <SummaryStat label="Cancelled" value={summary.cancelledCount} />
+          </dl>
 
-          <div className="admin-toolbar">
-            <span className="admin-toolbar-label">Filter</span>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <div className="admin-toolbar" role="search" aria-label="Filter bookings">
+            <label className="admin-toolbar-label" htmlFor={`${controlId}-status`}>
+              Status
+            </label>
+            <select
+              id={`${controlId}-status`}
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
               {STATUS_FILTERS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -322,8 +346,10 @@ function BookingsPanel({ focusReference }) {
               ))}
             </select>
 
-            <span className="admin-toolbar-label">Sort</span>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <label className="admin-toolbar-label" htmlFor={`${controlId}-sort`}>
+              Sort by
+            </label>
+            <select id={`${controlId}-sort`} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
               {SORT_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -331,7 +357,11 @@ function BookingsPanel({ focusReference }) {
               ))}
             </select>
 
+            <label className="visually-hidden" htmlFor={`${controlId}-search`}>
+              Search bookings by customer name or reference
+            </label>
             <input
+              id={`${controlId}-search`}
               type="search"
               placeholder="Search customer or reference…"
               value={search}
@@ -342,140 +372,173 @@ function BookingsPanel({ focusReference }) {
           {visible.length === 0 ? (
             <EmptyState label="No bookings match for this date." />
           ) : (
-            <div className="admin-card-list">
-              {visible.map((booking) => {
-                const isBusy = rowBusy === booking.booking_reference
-                const eligibleAt = noShowEligibleAt(booking.starts_at)
-                const noShowReady = new Date() >= eligibleAt
+            <div
+              className="admin-table-wrap"
+              role="region"
+              aria-label={`Bookings for ${formatDateKeyFull(selectedDate)}`}
+              tabIndex={0}
+            >
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Booking</th>
+                    <th scope="col">Guest</th>
+                    <th scope="col">Party</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Deposit</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((booking) => {
+                    const isBusy = rowBusy === booking.booking_reference
+                    const eligibleAt = noShowEligibleAt(booking.starts_at)
+                    const noShowReady = new Date() >= eligibleAt
+                    const deposit = depositBadge(booking)
+                    const confirmation = confirmationSummary(booking)
 
-                return (
-                  <div
-                    className={`card admin-request-card${isFocused(booking.booking_reference) ? ' admin-focused' : ''}`}
-                    key={booking.id}
-                    data-focus-id={booking.booking_reference}
-                  >
-                    <div className="admin-request-head">
-                      <div>
-                        <h3>{booking.booking_reference}</h3>
-                        <span className="field-hint">
-                          {formatTime(booking.starts_at)} – {formatTime(booking.ends_at)}
-                        </span>
-                      </div>
-                      <StatusBadge status={booking.status} />
-                    </div>
-
-                    <div className="admin-request-details">
-                      <div>
-                        <span className="admin-detail-label">Customer</span>
-                        <span>{booking.customer_name}</span>
-                      </div>
-                      <div>
-                        <span className="admin-detail-label">Party</span>
-                        <span>{booking.party_size} guests</span>
-                      </div>
-                      <div>
-                        <span className="admin-detail-label">Email</span>
-                        <span>{booking.customer_email}</span>
-                      </div>
-                      <div>
-                        <span className="admin-detail-label">Phone</span>
-                        <span>{booking.customer_phone || 'Not provided'}</span>
-                      </div>
-                      <div>
-                        <span className="admin-detail-label">Deposit</span>
-                        <span className={`badge badge-${depositBadge(booking).tone}`}>
-                          {depositBadge(booking).text}
-                        </span>
-                      </div>
-                    </div>
-
-                    {booking.special_requests && (
-                      <p className="admin-request-message">
-                        <strong>Special requests:</strong> {booking.special_requests}
-                      </p>
-                    )}
-
-                    {booking.status === 'cancelled' && booking.cancel_reason && (
-                      <p className="admin-request-message">
-                        <strong>Cancel reason:</strong> {booking.cancel_reason}
-                      </p>
-                    )}
-
-                    {booking.status === 'confirmed' && (
-                      <div className="admin-request-actions admin-request-actions-wrap">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={isBusy}
-                          onClick={() => handleInstantAction(booking, 'seated')}
-                        >
-                          {isBusy ? 'Working…' : 'Mark Seated'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={!noShowReady || isBusy}
-                          onClick={() => setConfirmTarget({ booking, action: 'no_show' })}
-                        >
-                          Mark No-Show
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger-outline btn-sm"
-                          disabled={isBusy}
-                          onClick={() => setConfirmTarget({ booking, action: 'cancelled' })}
-                        >
-                          Cancel
-                        </button>
-                        {!noShowReady && (
-                          <span className="field-hint admin-noshow-hint">
-                            No-show available after{' '}
-                            {eligibleAt.toLocaleTimeString('en-AU', {
-                              timeZone: 'Australia/Sydney',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
+                    return (
+                      <tr
+                        className={isFocused(booking.booking_reference) ? 'admin-focused' : undefined}
+                        key={booking.id}
+                        data-focus-id={booking.booking_reference}
+                      >
+                        <td className="admin-cell-time">
+                          {formatTime(booking.starts_at)}
+                          <span className="admin-cell-sub">to {formatTime(booking.ends_at)}</span>
+                        </td>
+                        <th scope="row" className="admin-cell-ref">
+                          {booking.booking_reference}
+                        </th>
+                        <td className="admin-cell-guest">
+                          <span className="admin-cell-strong">{booking.customer_name}</span>
+                          <a className="admin-cell-sub admin-contact" href={`mailto:${booking.customer_email}`}>
+                            {booking.customer_email}
+                          </a>
+                          <span className="admin-cell-sub">
+                            {booking.customer_phone || 'Phone not provided'}
                           </span>
-                        )}
-                      </div>
-                    )}
+                          {booking.special_requests && (
+                            <span className="admin-cell-note">
+                              <strong>Special requests:</strong> {booking.special_requests}
+                            </span>
+                          )}
+                          {booking.status === 'cancelled' && booking.cancel_reason && (
+                            <span className="admin-cell-note">
+                              <strong>Cancel reason:</strong> {booking.cancel_reason}
+                            </span>
+                          )}
+                        </td>
+                        <td className="admin-cell-num">{booking.party_size}</td>
+                        <td className="admin-cell-status">
+                          <StatusBadge status={booking.status} />
+                          <span className="admin-cell-sub admin-confirmation">
+                            Confirmation:{' '}
+                            {confirmation.method ? (
+                              <>
+                                {confirmation.method} ·{' '}
+                                <span className={confirmation.failed ? 'admin-confirmation-failed' : undefined}>
+                                  {confirmation.status}
+                                </span>
+                              </>
+                            ) : (
+                              'not recorded'
+                            )}
+                          </span>
+                          {confirmation.failed && booking.confirmation_delivery_error && (
+                            <span className="admin-cell-note admin-confirmation-error">
+                              <strong>Not delivered:</strong> {booking.confirmation_delivery_error}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`badge badge-${deposit.tone}`}>{deposit.text}</span>
+                        </td>
+                        <td className="admin-cell-actions">
+                          {booking.status === 'confirmed' && (
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={isBusy}
+                                onClick={() => handleInstantAction(booking, 'seated')}
+                              >
+                                {isBusy ? 'Working…' : 'Mark seated'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={!noShowReady || isBusy}
+                                aria-describedby={!noShowReady ? `${controlId}-noshow-${booking.id}` : undefined}
+                                onClick={() => setConfirmTarget({ booking, action: 'no_show' })}
+                              >
+                                Mark no-show
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-danger-outline btn-sm"
+                                disabled={isBusy}
+                                onClick={() => setConfirmTarget({ booking, action: 'cancelled' })}
+                              >
+                                Cancel booking
+                              </button>
+                              {!noShowReady && (
+                                <span id={`${controlId}-noshow-${booking.id}`} className="field-hint admin-noshow-hint">
+                                  No-show available after{' '}
+                                  {eligibleAt.toLocaleTimeString('en-AU', {
+                                    timeZone: 'Australia/Sydney',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                          )}
 
-                    {booking.status === 'seated' && (
-                      <div className="admin-request-actions admin-request-actions-wrap">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={isBusy}
-                          onClick={() => handleInstantAction(booking, 'completed')}
-                        >
-                          {isBusy ? 'Working…' : 'Mark Completed'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={isBusy}
-                          onClick={() => setConfirmTarget({ booking, action: 'undo_seated' })}
-                        >
-                          Undo Seated
-                        </button>
-                      </div>
-                    )}
+                          {booking.status === 'seated' && (
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={isBusy}
+                                onClick={() => handleInstantAction(booking, 'completed')}
+                              >
+                                {isBusy ? 'Working…' : 'Mark completed'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={isBusy}
+                                onClick={() => setConfirmTarget({ booking, action: 'undo_seated' })}
+                              >
+                                Undo seated
+                              </button>
+                            </div>
+                          )}
 
-                    {booking.status === 'completed' && (
-                      <div className="admin-request-actions">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={isBusy}
-                          onClick={() => setConfirmTarget({ booking, action: 'undo_completed' })}
-                        >
-                          Undo Completed
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+                          {booking.status === 'completed' && (
+                            <div className="admin-actions">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={isBusy}
+                                onClick={() => setConfirmTarget({ booking, action: 'undo_completed' })}
+                              >
+                                Undo completed
+                              </button>
+                            </div>
+                          )}
+
+                          {['cancelled', 'no_show'].includes(booking.status) && (
+                            <span className="admin-cell-sub">No actions</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </>
@@ -485,26 +548,27 @@ function BookingsPanel({ focusReference }) {
         <ConfirmDialog
           title="Mark this booking as a no-show?"
           danger
-          confirmLabel="Confirm No-Show"
+          confirmLabel="Confirm no-show"
+          cancelLabel="Go back"
           onConfirm={handleConfirmedAction}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.booking.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.booking.customer_name}</dd>
             </div>
             <div>
-              <span>Time</span>
-              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+              <dt>Time</dt>
+              <dd>{formatDateTime(confirmTarget.booking.starts_at)}</dd>
             </div>
             <div>
-              <span>Party</span>
-              <span>{confirmTarget.booking.party_size} guests</span>
+              <dt>Party</dt>
+              <dd>{confirmTarget.booking.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.booking.booking_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.booking.booking_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>
@@ -516,27 +580,28 @@ function BookingsPanel({ focusReference }) {
           showReason
           reasonLabel="Reason (optional)"
           reasonPlaceholder="e.g. Requested by the customer over the phone"
-          confirmLabel="Confirm Cancellation"
+          confirmLabel="Cancel booking"
+          cancelLabel="Keep booking"
           danger
           onConfirm={handleConfirmedAction}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.booking.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.booking.customer_name}</dd>
             </div>
             <div>
-              <span>Time</span>
-              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+              <dt>Time</dt>
+              <dd>{formatDateTime(confirmTarget.booking.starts_at)}</dd>
             </div>
             <div>
-              <span>Party</span>
-              <span>{confirmTarget.booking.party_size} guests</span>
+              <dt>Party</dt>
+              <dd>{confirmTarget.booking.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.booking.booking_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.booking.booking_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>
@@ -553,20 +618,20 @@ function BookingsPanel({ focusReference }) {
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.booking.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.booking.customer_name}</dd>
             </div>
             <div>
-              <span>Time</span>
-              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+              <dt>Time</dt>
+              <dd>{formatDateTime(confirmTarget.booking.starts_at)}</dd>
             </div>
             <div>
-              <span>Party</span>
-              <span>{confirmTarget.booking.party_size} guests</span>
+              <dt>Party</dt>
+              <dd>{confirmTarget.booking.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.booking.booking_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.booking.booking_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>
@@ -583,20 +648,20 @@ function BookingsPanel({ focusReference }) {
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Customer</span>
-              <span>{confirmTarget.booking.customer_name}</span>
+              <dt>Customer</dt>
+              <dd>{confirmTarget.booking.customer_name}</dd>
             </div>
             <div>
-              <span>Time</span>
-              <span>{formatDateTime(confirmTarget.booking.starts_at)}</span>
+              <dt>Time</dt>
+              <dd>{formatDateTime(confirmTarget.booking.starts_at)}</dd>
             </div>
             <div>
-              <span>Party</span>
-              <span>{confirmTarget.booking.party_size} guests</span>
+              <dt>Party</dt>
+              <dd>{confirmTarget.booking.party_size} guests</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.booking.booking_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.booking.booking_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>

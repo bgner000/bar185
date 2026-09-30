@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import api from '../lib/api'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
 import { Alert, LoadingState, EmptyState } from '../components/Feedback'
 import { formatDateTime } from '../lib/format'
+import { useModalFocus } from '../lib/useModalFocus'
 
 function toDateValue(isoString) {
   if (!isoString) return ''
@@ -41,6 +42,12 @@ function EventEditModal({ event, onSave, onClose }) {
   })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const titleId = useId()
+  const panelRef = useModalFocus({
+    onEscape: onClose,
+    locked: submitting,
+    initialFocusSelector: '#edit-event-title',
+  })
 
   const handleChange = (changeEvent) => {
     const { name, value } = changeEvent.target
@@ -98,27 +105,42 @@ function EventEditModal({ event, onSave, onClose }) {
     }
   }
 
-  const handleOverlayKeyDown = (event2) => {
-    if (event2.key === 'Escape' && !submitting) onClose()
-  }
-
   return (
-    <div
-      className="modal-overlay"
-      role="presentation"
-      onClick={() => !submitting && onClose()}
-      onKeyDown={handleOverlayKeyDown}
-    >
+    <div className="modal-overlay" role="presentation" onClick={() => !submitting && onClose()}>
       <div
-        className="modal-panel"
+        ref={panelRef}
+        className="modal-panel modal-panel-wide"
         role="dialog"
         aria-modal="true"
-        aria-label="Edit event"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
-        <h3>Edit Event</h3>
+        <div className="modal-head">
+          <h2 id={titleId} className="modal-title">
+            Edit event
+          </h2>
+          <button
+            type="button"
+            className="modal-close"
+            aria-label="Close dialog"
+            disabled={submitting}
+            onClick={onClose}
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+              <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
 
-        {error && <div className="alert alert-error modal-error">{error}</div>}
+        {error && (
+          <div className="alert alert-error modal-error" role="alert">
+            <p>
+              <strong>Error: </strong>
+              {error}
+            </p>
+          </div>
+        )}
 
         <div className="field">
           <label htmlFor="edit-event-title">Event title</label>
@@ -146,7 +168,7 @@ function EventEditModal({ event, onSave, onClose }) {
           </div>
 
           <div className="field">
-            <span className="admin-detail-label">Status</span>
+            <span className="admin-field-static-label">Current status</span>
             <div>
               <StatusBadge status={event.status} />
             </div>
@@ -221,15 +243,15 @@ function EventEditModal({ event, onSave, onClose }) {
 
         <p className="field-hint">
           To publish, unpublish, cancel, or archive this event, use the buttons on the event
-          card — saving here only updates its details, never its status.
+          listing — saving here only updates its details, never its status.
         </p>
 
         <div className="modal-actions">
           <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
-            Cancel
+            Discard changes
           </button>
           <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Saving…' : 'Save Changes'}
+            {submitting ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </div>
@@ -279,7 +301,11 @@ function EventForm({ initial, submitLabel, onSubmit, onCancel }) {
   }
 
   return (
-    <form className="card card-raised" onSubmit={handleSubmit}>
+    <form className="admin-panel admin-event-form" onSubmit={handleSubmit} aria-labelledby="event-form-title">
+      <h3 id="event-form-title" className="admin-panel-title">
+        New event
+      </h3>
+
       {error && (
         <Alert type="error" title="Could not save event">
           {error}
@@ -328,12 +354,12 @@ function EventForm({ initial, submitLabel, onSubmit, onCancel }) {
         </div>
       </div>
 
-      <div className="admin-request-actions">
-        <button type="submit" className="btn btn-primary btn-sm" disabled={submitting}>
+      <div className="admin-actions">
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
           {submitting ? 'Saving…' : submitLabel}
         </button>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} disabled={submitting}>
-          Cancel
+        <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={submitting}>
+          Discard
         </button>
       </div>
     </form>
@@ -341,39 +367,50 @@ function EventForm({ initial, submitLabel, onSubmit, onCancel }) {
 }
 
 function EventCard({ event, isBusy, onEdit, onInstantStatusChange, onConfirmStatusChange }) {
+  // Visible button text names the action; the visually-hidden suffix gives
+  // each one a unique accessible name (e.g. "Edit event “Friday Jazz Trio”")
+  // so a screen-reader button list isn't a column of identical "Edit"s.
+  const forTitle = <span className="visually-hidden"> “{event.title}”</span>
+
   return (
-    <div className="card admin-request-card">
-      <div className="admin-request-head">
+    <li className="admin-record">
+      <div className="admin-record-head">
         <div>
-          <h3>{event.title}</h3>
-          <span className="field-hint">
-            {formatDateTime(event.starts_at)}
-            {event.ends_at ? ` – ${formatDateTime(event.ends_at)}` : ''}
-          </span>
+          <h4 className="admin-record-title">{event.title}</h4>
+          <p className="admin-record-meta">
+            <span>
+              {formatDateTime(event.starts_at)}
+              {event.ends_at ? ` – ${formatDateTime(event.ends_at)}` : ''}
+            </span>
+          </p>
         </div>
         <StatusBadge status={event.status} />
       </div>
 
-      <div className="admin-request-details">
+      <dl className="admin-record-details">
         <div>
-          <span className="admin-detail-label">Reference</span>
-          <span>{event.event_reference}</span>
+          <dt>Reference</dt>
+          <dd>{event.event_reference}</dd>
         </div>
         <div>
-          <span className="admin-detail-label">Tag</span>
-          <span>{event.tag || 'Not set'}</span>
+          <dt>Tag</dt>
+          <dd>{event.tag || 'Not set'}</dd>
         </div>
         <div>
-          <span className="admin-detail-label">Created by</span>
-          <span>{event.created_by_name || 'Unknown'}</span>
+          <dt>Created by</dt>
+          <dd>{event.created_by_name || 'Unknown'}</dd>
         </div>
-      </div>
+      </dl>
 
-      {event.description && <p className="admin-request-message">{event.description}</p>}
+      {event.description && (
+        <div className="admin-record-message">
+          <p>{event.description}</p>
+        </div>
+      )}
 
-      <div className="admin-request-actions admin-request-actions-wrap">
+      <div className="admin-actions">
         <button type="button" className="btn btn-secondary btn-sm" disabled={isBusy} onClick={onEdit}>
-          Edit
+          Edit event{forTitle}
         </button>
 
         {event.status === 'draft' && (
@@ -383,18 +420,18 @@ function EventCard({ event, isBusy, onEdit, onInstantStatusChange, onConfirmStat
             disabled={isBusy}
             onClick={() => onInstantStatusChange(event, 'published')}
           >
-            {isBusy ? 'Working…' : 'Publish'}
+            {isBusy ? 'Working…' : <>Publish event{forTitle}</>}
           </button>
         )}
 
         {event.status === 'published' && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="btn btn-secondary btn-sm"
             disabled={isBusy}
             onClick={() => onInstantStatusChange(event, 'draft')}
           >
-            {isBusy ? 'Working…' : 'Unpublish'}
+            {isBusy ? 'Working…' : <>Unpublish event{forTitle}</>}
           </button>
         )}
 
@@ -405,22 +442,22 @@ function EventCard({ event, isBusy, onEdit, onInstantStatusChange, onConfirmStat
             disabled={isBusy}
             onClick={() => onConfirmStatusChange('cancelled')}
           >
-            Cancel
+            Cancel event{forTitle}
           </button>
         )}
 
         {event.status !== 'archived' && (
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-secondary btn-sm"
             disabled={isBusy}
             onClick={() => onConfirmStatusChange('archived')}
           >
-            Archive
+            Archive event{forTitle}
           </button>
         )}
       </div>
-    </div>
+    </li>
   )
 }
 
@@ -517,7 +554,14 @@ function EventsPanel() {
 
   return (
     <div>
-      <h2 className="admin-section-title">Events</h2>
+      <div className="admin-page-head">
+        <h2 className="admin-section-title">Events</h2>
+        {!showCreateForm && !editingEvent && (
+          <button type="button" className="btn btn-primary" onClick={() => setShowCreateForm(true)}>
+            Create event
+          </button>
+        )}
+      </div>
 
       {actionError && (
         <Alert type="error" title="Action failed">
@@ -525,55 +569,54 @@ function EventsPanel() {
         </Alert>
       )}
 
-      {!showCreateForm && !editingEvent && (
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={() => setShowCreateForm(true)}
-        >
-          Create Event
-        </button>
-      )}
-
       {showCreateForm && (
-        <EventForm submitLabel="Create Event" onSubmit={handleCreate} onCancel={() => setShowCreateForm(false)} />
+        <EventForm submitLabel="Create event" onSubmit={handleCreate} onCancel={() => setShowCreateForm(false)} />
       )}
 
-      <h3>Upcoming</h3>
-      {upcoming.length === 0 ? (
-        <EmptyState label="No upcoming events." />
-      ) : (
-        <div className="admin-card-list">{upcoming.map(renderCard)}</div>
-      )}
+      <section className="admin-subsection" aria-labelledby="events-upcoming-heading">
+        <h3 id="events-upcoming-heading" className="admin-subsection-title">
+          Upcoming
+        </h3>
+        {upcoming.length === 0 ? (
+          <EmptyState label="No upcoming events." />
+        ) : (
+          <ul className="admin-record-list">{upcoming.map(renderCard)}</ul>
+        )}
+      </section>
 
-      <h3>History</h3>
-      {history.length === 0 ? (
-        <EmptyState label="No past events yet." />
-      ) : (
-        <div className="admin-card-list">{history.map(renderCard)}</div>
-      )}
+      <section className="admin-subsection" aria-labelledby="events-history-heading">
+        <h3 id="events-history-heading" className="admin-subsection-title">
+          History
+        </h3>
+        {history.length === 0 ? (
+          <EmptyState label="No past events yet." />
+        ) : (
+          <ul className="admin-record-list">{history.map(renderCard)}</ul>
+        )}
+      </section>
 
       {confirmTarget && confirmTarget.action === 'cancelled' && (
         <ConfirmDialog
           title="Cancel this event?"
           description="It will no longer appear in the public Upcoming Events list. This can't be undone from here — only archived afterward."
-          confirmLabel="Cancel Event"
+          confirmLabel="Cancel event"
+          cancelLabel="Keep event"
           danger
           onConfirm={handleConfirmedStatusChange}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Event</span>
-              <span>{confirmTarget.event.title}</span>
+              <dt>Event</dt>
+              <dd>{confirmTarget.event.title}</dd>
             </div>
             <div>
-              <span>Starts</span>
-              <span>{formatDateTime(confirmTarget.event.starts_at)}</span>
+              <dt>Starts</dt>
+              <dd>{formatDateTime(confirmTarget.event.starts_at)}</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.event.event_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.event.event_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>
@@ -583,23 +626,24 @@ function EventsPanel() {
         <ConfirmDialog
           title="Archive this event?"
           description="Archived events stay in history but this can't be undone from here."
-          confirmLabel="Archive Event"
+          confirmLabel="Archive event"
+          cancelLabel="Go back"
           danger
           onConfirm={handleConfirmedStatusChange}
           onClose={closeConfirm}
         >
           <dl className="modal-detail-list">
             <div>
-              <span>Event</span>
-              <span>{confirmTarget.event.title}</span>
+              <dt>Event</dt>
+              <dd>{confirmTarget.event.title}</dd>
             </div>
             <div>
-              <span>Starts</span>
-              <span>{formatDateTime(confirmTarget.event.starts_at)}</span>
+              <dt>Starts</dt>
+              <dd>{formatDateTime(confirmTarget.event.starts_at)}</dd>
             </div>
             <div>
-              <span>Reference</span>
-              <span>{confirmTarget.event.event_reference}</span>
+              <dt>Reference</dt>
+              <dd>{confirmTarget.event.event_reference}</dd>
             </div>
           </dl>
         </ConfirmDialog>

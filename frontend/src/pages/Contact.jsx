@@ -41,7 +41,7 @@ function Contact() {
 
           <div className="contact-details-block">
             <h3>Visit</h3>
-            <p>185 Illawarra Road</p>
+            <p>185 Marrickville Road</p>
             <p>Marrickville NSW 2204</p>
           </div>
 

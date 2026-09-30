@@ -5,10 +5,8 @@
      moments (the hero, the footer, one gallery beat per page), not the
      whole site. Wine is the one brand accent color; brass is used even
      more sparingly, for small marks (rules, dates) rather than buttons
-     or borders everywhere. See .admin-shell in admin.css, which
-     re-declares every token below back to this project's *original*
-     dark-charcoal-and-gold values -- the admin dashboard is deliberately
-     unaffected by any of this. */
+     or borders everywhere. The staff admin dashboard (admin.css) reads
+     these same tokens, so both share one visual identity. */
   --ink: #1c1712;
   --ink-soft: #262019;
   --stone: #f1ebe0;
@@ -44,13 +42,9 @@
   --brass: #a07f4f;
   --brass-dim: rgba(160, 127, 79, 0.28);
 
-  /* Semantic indirection so shared component rules (.btn, .card, focus
-     rings, form accents, ...) can be reused as-is by .admin-shell, which
-     re-points --accent/--accent-deep/--panel/--panel-raised back to its
-     original gold-on-charcoal values instead of this redesign's
-     wine-on-paper ones. Nothing below should reference --wine or --paper
-     directly outside of these two lines and the .admin-shell block in
-     admin.css. */
+  /* Semantic indirection read by the shared component rules (.btn, .card,
+     focus rings, form accents, ...) used on both the public site and the
+     admin dashboard. */
   --accent: var(--wine);
   --accent-bright: var(--wine-bright);
   --accent-deep: var(--wine-deep);

@@ -12,6 +12,23 @@ const { releaseExpiredHolds } = require('./bookings/holds');
 const { normalizeAuMobile } = require('./notifications/phone');
 const { saveMenuFile, deleteMenuFile, STORAGE_DIR, PUBLIC_PREFIX } = require('./menu/storage');
 
+// The customer's choice of ONE confirmation channel ('email' | 'sms').
+// Returns { method } or { error } -- SMS additionally needs a valid
+// Australian mobile, since that's where the confirmation will go.
+function validateConfirmationMethod(rawMethod, customerPhone) {
+  if (rawMethod !== 'email' && rawMethod !== 'sms') {
+    return { error: 'Choose how you would like to receive your confirmation: email or SMS.' };
+  }
+
+  if (rawMethod === 'sms' && !normalizeAuMobile(customerPhone)) {
+    return {
+      error: 'A valid Australian mobile number is required to receive your confirmation by SMS.'
+    };
+  }
+
+  return { method: rawMethod };
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -127,8 +144,9 @@ async function handleStripeCheckoutCompleted(session) {
         updated_at = NOW()
       WHERE id = $1
       RETURNING
-        id, booking_reference, booking_slot_id, party_size,
-        customer_name, customer_email, customer_phone, special_requests
+        id, booking_reference, booking_slot_id, booking_type, status, party_size,
+        customer_name, customer_email, customer_phone, special_requests,
+        deposit_status, deposit_amount_cents, confirmation_method
       `,
       [booking.id, paymentIntentId || null]
     );
@@ -466,7 +484,8 @@ app.post('/api/v1/bookings', async (req, res) => {
     customerEmail,
     customerPhone,
     specialRequests,
-    verificationId
+    verificationId,
+    confirmationMethod
   } = req.body;
 
   const slotId = Number(bookingSlotId);
@@ -485,6 +504,16 @@ app.post('/api/v1/bookings', async (req, res) => {
     return res.status(400).json({
       status: 'failed',
       message: 'Valid booking slot, party size, customer name and email are required'
+    });
+  }
+
+  const confirmationChoice = validateConfirmationMethod(confirmationMethod, customerPhone);
+
+  if (confirmationChoice.error) {
+    return res.status(400).json({
+      status: 'failed',
+      field: 'confirmationMethod',
+      message: confirmationChoice.error
     });
   }
 
@@ -639,7 +668,8 @@ app.post('/api/v1/bookings', async (req, res) => {
         special_requests,
         confirmed_at,
         booking_security_method,
-        deposit_status
+        deposit_status,
+        confirmation_method
       )
       VALUES (
         $1,
@@ -653,7 +683,8 @@ app.post('/api/v1/bookings', async (req, res) => {
         $7,
         NOW(),
         'email_verification',
-        'not_required'
+        'not_required',
+        $8
       )
       RETURNING
         id,
@@ -670,7 +701,8 @@ app.post('/api/v1/bookings', async (req, res) => {
         created_at,
         booking_security_method,
         deposit_amount_cents,
-        deposit_status
+        deposit_status,
+        confirmation_method
       `,
       [
         bookingReference,
@@ -679,7 +711,8 @@ app.post('/api/v1/bookings', async (req, res) => {
         customerName.trim(),
         customerEmail.trim(),
         customerPhone?.trim() || null,
-        specialRequests?.trim() || null
+        specialRequests?.trim() || null,
+        confirmationChoice.method
       ]
     );
 
@@ -738,7 +771,15 @@ app.post('/api/v1/bookings', async (req, res) => {
 // happened -- never from this endpoint returning successfully, and never
 // just because the browser comes back to the success URL.
 app.post('/api/v1/bookings/deposit/start', async (req, res) => {
-  const { bookingSlotId, partySize, customerName, customerEmail, customerPhone, specialRequests } = req.body;
+  const {
+    bookingSlotId,
+    partySize,
+    customerName,
+    customerEmail,
+    customerPhone,
+    specialRequests,
+    confirmationMethod
+  } = req.body;
 
   const slotId = Number(bookingSlotId);
   const requestedPartySize = Number(partySize);
@@ -765,6 +806,18 @@ app.post('/api/v1/bookings/deposit/start', async (req, res) => {
     return res.status(400).json({
       status: 'failed',
       message: 'A valid Australian mobile number is required for the deposit option'
+    });
+  }
+
+  // Stored now, used only once Stripe confirms payment -- the webhook is
+  // what sends the confirmation, never this endpoint.
+  const confirmationChoice = validateConfirmationMethod(confirmationMethod, customerPhone);
+
+  if (confirmationChoice.error) {
+    return res.status(400).json({
+      status: 'failed',
+      field: 'confirmationMethod',
+      message: confirmationChoice.error
     });
   }
 
@@ -934,11 +987,12 @@ app.post('/api/v1/bookings/deposit/start', async (req, res) => {
         deposit_amount_cents,
         deposit_status,
         stripe_checkout_session_id,
-        hold_expires_at
+        hold_expires_at,
+        confirmation_method
       )
       VALUES (
         $1, $2, 'standard', 'pending', $3, $4, $5, $6, $7,
-        'deposit', $8, 'pending', $9, $10
+        'deposit', $8, 'pending', $9, $10, $11
       )
       `,
       [
@@ -951,7 +1005,8 @@ app.post('/api/v1/bookings/deposit/start', async (req, res) => {
         specialRequests?.trim() || null,
         payments.DEPOSIT_AMOUNT_CENTS,
         checkoutResult.sessionId,
-        holdExpiresAt.toISOString()
+        holdExpiresAt.toISOString(),
+        confirmationChoice.method
       ]
     );
 
@@ -1017,6 +1072,7 @@ app.get('/api/v1/bookings/deposit/status', async (req, res) => {
         b.deposit_status,
         b.deposit_amount_cents,
         b.party_size,
+        b.confirmation_method,
         bs.starts_at,
         bs.ends_at
       FROM bookings b
@@ -1043,6 +1099,7 @@ app.get('/api/v1/bookings/deposit/status', async (req, res) => {
       depositAmountCents: booking.deposit_amount_cents,
       bookingReference: booking.booking_reference,
       partySize: booking.party_size,
+      confirmationMethod: booking.confirmation_method,
       startsAt: booking.starts_at,
       endsAt: booking.ends_at
     });
@@ -1066,7 +1123,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     customerName,
     customerPhone,
     customerEmail,
-    verificationId
+    verificationId,
+    confirmationMethod
   } = req.body;
 
   if (!idempotencyKey || idempotencyKey.trim() === '') {
@@ -1098,6 +1156,16 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     });
   }
 
+  const confirmationChoice = validateConfirmationMethod(confirmationMethod, customerPhone);
+
+  if (confirmationChoice.error) {
+    return res.status(400).json({
+      status: 'failed',
+      field: 'confirmationMethod',
+      message: confirmationChoice.error
+    });
+  }
+
   const requestPayload = {
     bookingDate,
     slotStartAt,
@@ -1105,7 +1173,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
     customerName: customerName.trim(),
     customerPhone: customerPhone.trim(),
     customerEmail: customerEmail.trim(),
-    verificationId
+    verificationId,
+    confirmationMethod: confirmationChoice.method
   };
 
   const requestHash = crypto
@@ -1280,7 +1349,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
         customer_name,
         customer_email,
         customer_phone,
-        status
+        status,
+        confirmation_method
       )
       VALUES (
         $1,
@@ -1291,7 +1361,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
         $6,
         $7,
         $8,
-        'pending'
+        'pending',
+        $9
       )
       RETURNING
         id,
@@ -1303,6 +1374,7 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
         customer_email,
         customer_phone,
         status,
+        confirmation_method,
         created_at
       `,
       [
@@ -1313,7 +1385,8 @@ app.post('/api/v1/large-group-booking-requests', async (req, res) => {
         requestedPartySize,
         customerName.trim(),
         customerEmail.trim(),
-        customerPhone.trim()
+        customerPhone.trim(),
+        confirmationChoice.method
       ]
     );
 
@@ -1560,6 +1633,7 @@ app.get(
             status,
             decline_reason,
             reviewed_at,
+            confirmation_method,
             created_at
           FROM large_group_booking_requests
           ORDER BY created_at DESC
@@ -1741,6 +1815,7 @@ app.patch('/api/v1/bookings/:bookingReference/cancel', async (req, res) => {
         b.status,
         b.deposit_status,
         b.stripe_payment_intent_id,
+        b.confirmation_method,
         bs.starts_at
       FROM bookings b
       JOIN booking_slots bs
@@ -1899,7 +1974,8 @@ app.patch(
           customer_email,
           customer_phone,
           status,
-          approved_booking_id
+          approved_booking_id,
+          confirmation_method
         FROM large_group_booking_requests
         WHERE request_reference = $1
         FOR UPDATE
@@ -2025,7 +2101,8 @@ app.patch(
           customer_phone,
           special_requests,
           reviewed_by_user_id,
-          confirmed_at
+          confirmed_at,
+          confirmation_method
         )
         VALUES (
           $1,
@@ -2038,7 +2115,8 @@ app.patch(
           $6,
           NULL,
           $7,
-          NOW()
+          NOW(),
+          $8
         )
         RETURNING
           id,
@@ -2051,7 +2129,8 @@ app.patch(
           customer_email,
           customer_phone,
           confirmed_at,
-          created_at
+          created_at,
+          confirmation_method
         `,
         [
           bookingReference,
@@ -2060,7 +2139,8 @@ app.patch(
           request.customer_name,
           request.customer_email,
           request.customer_phone,
-          req.adminUser.id
+          req.adminUser.id,
+          request.confirmation_method
         ]
       );
 
@@ -2159,7 +2239,8 @@ app.patch(
           customer_name,
           customer_email,
           customer_phone,
-          decline_reason
+          decline_reason,
+          confirmation_method
         FROM large_group_booking_requests
         WHERE request_reference = $1
         FOR UPDATE
@@ -2376,6 +2457,10 @@ app.get(
           b.stripe_payment_intent_id,
           b.paid_at,
           b.refunded_at,
+          b.confirmation_method,
+          b.confirmation_delivery_status,
+          b.confirmation_sent_at,
+          b.confirmation_delivery_error,
           bs.starts_at,
           bs.ends_at
         FROM bookings b
@@ -2455,6 +2540,10 @@ app.get(
           b.stripe_payment_intent_id,
           b.paid_at,
           b.refunded_at,
+          b.confirmation_method,
+          b.confirmation_delivery_status,
+          b.confirmation_sent_at,
+          b.confirmation_delivery_error,
           bs.starts_at,
           bs.ends_at
         FROM bookings b
@@ -2543,6 +2632,7 @@ app.patch(
           b.customer_phone,
           b.deposit_status,
           b.stripe_payment_intent_id,
+          b.confirmation_method,
           bs.starts_at
         FROM bookings b
         JOIN booking_slots bs
