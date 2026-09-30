@@ -66,7 +66,7 @@ function formatDepositPaid(depositStatus, depositAmountCents) {
 
 // Special requests are shown only when the customer wrote something real --
 // blanks and placeholder answers like "N/A" or "none" are left out.
-const EMPTY_REQUEST_VALUES = new Set(['n/a', 'na', 'none', 'nil', 'no', '-', '--', '.', 'nothing']);
+const EMPTY_REQUEST_VALUES = new Set(['n/a', 'na', 'none', 'null', 'undefined', 'nil', 'no', '-', '--', '.', 'nothing']);
 
 function meaningfulText(value) {
   const trimmed = String(value ?? '').trim();
@@ -85,20 +85,23 @@ function bookPageUrl() {
   return /^https?:\/\//.test(origin) ? `${origin}/book` : null;
 }
 
-// Bar 185 palette, matching the public site (index.css tokens), expressed
-// as literal hex values because email clients don't support CSS variables.
+// Deliberately plain transactional styling: white page, one sans-serif
+// stack, near-black text, light-grey rules. The Bar 185 wine colour is used
+// for the single "Book page" link only.
 const EMAIL_COLORS = {
-  page: '#f1ebe0', // --stone
-  surface: '#ffffff',
-  paper: '#faf7f1', // --paper
-  text: '#262019', // --text (15:1 on white)
-  muted: '#5c5245', // --text-muted (7.7:1 on white)
-  wine: '#6d2531', // --wine (10.7:1 on white)
-  rule: '#e3dccf', // decorative divider
+  background: '#ffffff',
+  heading: '#111111', // 18.9:1 on white
+  text: '#222222', // 15.9:1
+  label: '#444444', // 9.7:1
+  footer: '#666666', // 5.7:1
+  rule: '#ececec', // decorative divider only (softened)
+  link: '#6d2531', // Bar 185 wine, 10.7:1, always underlined
 };
 
-const SERIF = "Georgia, 'Times New Roman', Times, serif";
-const SANS = "Arial, Helvetica, sans-serif";
+const FONT = 'Arial, Helvetica, sans-serif';
+
+const DEPOSIT_NOTE =
+  'Your A$10 deposit is redeemable at the bar on the day of your booking. If you need to cancel, please do so at least 12 hours before your booking time.';
 
 function bookingConfirmed({
   customerName,
@@ -137,94 +140,104 @@ function bookingConfirmed({
   ];
 
   const c = EMAIL_COLORS;
+  const body = `font-family:${FONT};font-size:15px;line-height:25px;color:${c.text};`;
+  const sectionHeading = `margin:0 0 8px 0;font-family:${FONT};font-size:15px;line-height:22px;font-weight:bold;color:${c.heading};`;
 
-  const rowHtml = ([label, value], index) => `
+  const rowHtml = ([label, value]) => `
                 <tr>
-                  <td class="summary-label" width="38%" valign="top" style="padding:14px 16px 14px 0;${index ? `border-top:1px solid ${c.rule};` : ''}font-family:${SANS};font-size:14px;line-height:20px;color:${c.muted};">${escapeHtml(label)}</td>
-                  <td class="summary-value" valign="top" style="padding:14px 0;${index ? `border-top:1px solid ${c.rule};` : ''}font-family:${SANS};font-size:16px;line-height:22px;font-weight:bold;color:${c.text};word-break:break-word;">${escapeHtml(value)}</td>
+                  <td class="row-label" width="40%" valign="top" style="padding:15px 16px 15px 0;border-bottom:1px solid ${c.rule};font-family:${FONT};font-size:14px;line-height:21px;color:${c.label};">${escapeHtml(label)}</td>
+                  <td class="row-value" valign="top" style="padding:15px 0;border-bottom:1px solid ${c.rule};font-family:${FONT};font-size:15px;line-height:21px;font-weight:bold;color:${c.heading};word-break:break-word;">${escapeHtml(value)}</td>
                 </tr>`;
 
+  const linkStyle = `color:${c.link};text-decoration:underline;`;
   const changeHtml = bookUrl
-    ? escapeHtml(changeLine).replace(
-        'Book page',
-        `<a href="${escapeHtml(bookUrl)}" style="color:${c.wine};text-decoration:underline;">Book page</a>`
-      )
+    ? escapeHtml(changeLine).replace('Book page', `<a href="${escapeHtml(bookUrl)}" style="${linkStyle}">Book page</a>`)
     : escapeHtml(changeLine);
+
+  const depositNoteHtml = deposit
+    ? `
+          <tr>
+            <td style="padding:32px 0 0 0;">
+              <p style="${sectionHeading}">Deposit note</p>
+              <p style="margin:0;${body}">${escapeHtml(DEPOSIT_NOTE)}</p>
+            </td>
+          </tr>`
+    : '';
 
   const preheader = `Booking ${bookingReference} confirmed: ${shortDate}, ${start}, ${guests} guests.`;
 
-  // Email-client-safe HTML: table layout, inline styles, 600px max width,
-  // system fonts (Georgia for the serif wordmark/heading, Arial for body),
-  // no background images, gradients or web fonts. One small <style> block
-  // only adds mobile padding/stacking for clients that support it; the
-  // email reads correctly where it's stripped.
+  // Production-style transactional HTML: one 600px table, inline styles,
+  // Arial/Helvetica only, no images, backgrounds or web fonts. The small
+  // <style> block only (a) stacks detail rows on narrow screens and
+  // (b) stops Apple Mail / Gmail auto-linking the address in bright blue;
+  // the email still reads correctly where it is stripped.
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no, address=no, email=no, date=no">
 <title>Your Bar 185 booking is confirmed</title>
 <style>
+  a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
+  u + #body a { color: inherit; text-decoration: none; }
   @media only screen and (max-width: 620px) {
     .container { width: 100% !important; }
-    .pad { padding-left: 24px !important; padding-right: 24px !important; }
-    .summary-label, .summary-value { display: block !important; width: 100% !important; }
-    .summary-label { padding: 12px 0 2px 0 !important; }
-    .summary-value { padding: 0 0 12px 0 !important; border-top: 0 !important; }
+    .row-label, .row-value { display: block !important; width: 100% !important; }
+    .outer { padding: 32px 20px !important; }
+    .row-label { padding: 14px 0 0 0 !important; border-bottom: 0 !important; }
+    .row-value { padding: 4px 0 14px 0 !important; }
   }
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:${c.page};">
+<body id="body" style="margin:0;padding:0;background-color:${c.background};">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${escapeHtml(preheader)}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${c.page};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${c.background};">
     <tr>
-      <td align="center" style="padding:32px 12px;">
-        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:${c.surface};border:1px solid ${c.rule};">
+      <td class="outer" align="center" style="padding:48px 24px;">
+        <table role="presentation" class="container" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:560px;">
           <tr>
-            <td class="pad" style="padding:36px 48px 28px 48px;border-bottom:1px solid ${c.rule};background-color:${c.paper};">
-              <p style="margin:0;font-family:${SERIF};font-size:30px;line-height:34px;color:${c.text};">Bar <span style="color:${c.wine};">185</span></p>
-              <p style="margin:6px 0 0 0;font-family:${SANS};font-size:12px;line-height:16px;letter-spacing:2px;text-transform:uppercase;color:${c.muted};">Marrickville</p>
+            <td style="padding:0 0 24px 0;border-bottom:1px solid ${c.rule};">
+              <p style="margin:0;font-family:${FONT};font-size:17px;line-height:22px;font-weight:bold;color:${c.heading};">Bar 185</p>
+              <p style="margin:0;font-family:${FONT};font-size:14px;line-height:21px;color:${c.label};">Marrickville</p>
             </td>
           </tr>
           <tr>
-            <td class="pad" style="padding:36px 48px 8px 48px;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="32" height="2" style="width:32px;height:2px;line-height:2px;font-size:2px;background-color:${c.wine};">&nbsp;</td></tr></table>
-              <h1 style="margin:14px 0 20px 0;font-family:${SERIF};font-size:28px;line-height:34px;font-weight:normal;color:${c.text};">Booking confirmed</h1>
-              <p style="margin:0 0 8px 0;font-family:${SANS};font-size:16px;line-height:24px;color:${c.text};">Hi ${escapeHtml(name)},</p>
-              <p style="margin:0 0 24px 0;font-family:${SANS};font-size:16px;line-height:24px;color:${c.text};">${escapeHtml(introLine)}</p>
+            <td style="padding:40px 0 0 0;">
+              <h1 style="margin:0 0 24px 0;font-family:${FONT};font-size:22px;line-height:28px;font-weight:bold;color:${c.heading};">Booking confirmed</h1>
+              <p style="margin:0 0 12px 0;${body}">Hi ${escapeHtml(name)},</p>
+              <p style="margin:0 0 32px 0;${body}">${escapeHtml(introLine)}</p>
             </td>
           </tr>
           <tr>
-            <td class="pad" style="padding:0 48px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:2px solid ${c.text};border-bottom:1px solid ${c.rule};">${detailRows.map(rowHtml).join('')}
+            <td>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${c.rule};">${detailRows.map(rowHtml).join('')}
               </table>
             </td>
-          </tr>
+          </tr>${depositNoteHtml}
           <tr>
-            <td class="pad" style="padding:28px 48px 0 48px;">
-              <h2 style="margin:0 0 6px 0;font-family:${SERIF};font-size:18px;line-height:24px;font-weight:normal;color:${c.text};">Venue</h2>
-              <p style="margin:0;font-family:${SANS};font-size:16px;line-height:24px;color:${c.text};">${VENUE_ADDRESS_LINES.map(escapeHtml).join('<br>')}</p>
+            <td style="padding:36px 0 0 0;">
+              <p style="${sectionHeading}">Venue</p>
+              <p style="margin:0;${body}">${VENUE_ADDRESS_LINES.map(escapeHtml).join('<br>')}</p>
             </td>
           </tr>
           <tr>
-            <td class="pad" style="padding:24px 48px 0 48px;">
-              <h2 style="margin:0 0 6px 0;font-family:${SERIF};font-size:18px;line-height:24px;font-weight:normal;color:${c.text};">Need to change your booking?</h2>
-              <p style="margin:0;font-family:${SANS};font-size:15px;line-height:23px;color:${c.muted};">${changeHtml}</p>
+            <td style="padding:32px 0 0 0;">
+              <p style="${sectionHeading}">Need to change your booking?</p>
+              <p style="margin:0;${body}">${changeHtml}</p>
             </td>
           </tr>
           <tr>
-            <td class="pad" style="padding:32px 48px 40px 48px;">
-              <p style="margin:0 0 6px 0;font-family:${SANS};font-size:16px;line-height:24px;color:${c.text};">We look forward to seeing you.</p>
-              <p style="margin:0;font-family:${SERIF};font-size:20px;line-height:26px;color:${c.text};">Bar <span style="color:${c.wine};">185</span></p>
+            <td style="padding:40px 0 44px 0;">
+              <p style="margin:0 0 12px 0;${body}">We look forward to seeing you.</p>
+              <p style="margin:0;${body}">Bar 185</p>
             </td>
           </tr>
-        </table>
-        <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
           <tr>
-            <td class="pad" style="padding:18px 48px 0 48px;font-family:${SANS};font-size:12px;line-height:18px;color:${c.muted};">
-              Bar 185 · ${VENUE_ADDRESS_LINES.map(escapeHtml).join(', ')}<br>
-              You're receiving this email because a booking was made at Bar 185 with this address.
+            <td style="padding:24px 0 0 0;border-top:1px solid ${c.rule};font-family:${FONT};font-size:12px;line-height:20px;color:${c.footer};">
+              Bar 185<br>
+              ${VENUE_ADDRESS_LINES.map(escapeHtml).join(', ')}
             </td>
           </tr>
         </table>
@@ -235,7 +248,7 @@ function bookingConfirmed({
 </html>`;
 
   const text = [
-    'BAR 185',
+    'Bar 185',
     'Marrickville',
     '',
     'Booking confirmed',
@@ -245,16 +258,21 @@ function bookingConfirmed({
     introLine,
     '',
     ...detailRows.map(([label, value]) => `${label}: ${value}`),
+    ...(deposit ? ['', 'Deposit note', DEPOSIT_NOTE] : []),
     '',
     'Venue',
     ...VENUE_ADDRESS_LINES,
     '',
     'Need to change your booking?',
-    changeLine + (bookUrl ? ` ${bookUrl}` : ''),
+    changeLine + (bookUrl ? `\n${bookUrl}` : ''),
     '',
     'We look forward to seeing you.',
     '',
     'Bar 185',
+    '',
+    '--',
+    'Bar 185',
+    VENUE_ADDRESS_LINES.join(', '),
   ].join('\n');
 
   // SMS wording unchanged.
